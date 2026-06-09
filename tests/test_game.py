@@ -410,19 +410,44 @@ def test_move_rejects_invalid_destination_before_action_starts():
     assert player.current_action is None
 
 
-def test_player_snapshot_filters_undiscovered_locations_and_uses_local_firelight():
+def test_world_snapshot_is_player_dependent_and_uses_local_firelight():
     world = new_world()
     player = join_player(world, "Alice")
     world.minute = 23 * 60
     snapshot = world_snapshot(world, "Alice")
     assert set(snapshot["locations"]) == {"beach"}
     assert snapshot["light"] == "dark"
+    assert "lights" not in snapshot
 
     world.locations["jungle outskirts"].discovered = True
     world.locations["jungle outskirts"].placed.append(PlacedObject("fire", fuel=1, active=True))
-    beach_snapshot = world_snapshot(world, "Alice")
-    assert beach_snapshot["light"] == "dark"
+    snapshot = world_snapshot(world, "Alice")
+    assert snapshot["light"] == "dark"
+    assert set(snapshot["locations"]) == {"beach", "jungle outskirts"}
+    assert snapshot["locations"]["jungle outskirts"]["placed"] == []
 
     player.location = "jungle outskirts"
-    jungle_snapshot = world_snapshot(world, "Alice")
-    assert jungle_snapshot["light"] == "firelit"
+    snapshot = world_snapshot(world, "Alice")
+    assert snapshot["light"] == "firelit"
+    assert snapshot["locations"]["jungle outskirts"]["placed"] == [
+        {"kind": "fire", "fuel": 1, "active": True, "data": {}}
+    ]
+
+
+def test_player_snapshot_includes_only_current_player_state():
+    world = new_world()
+    alice = join_player(world, "Alice")
+    bob = join_player(world, "Bob")
+    bob.carried.append(ItemStack("coconut", 1))
+    bob.needs["thirst"] = 99
+
+    snapshot = world_snapshot(world, "Alice")
+
+    assert set(snapshot["players"]) == {"Alice"}
+    assert snapshot["players"]["Alice"]["needs"] == alice.needs
+    assert "available_actions" in snapshot["players"]["Alice"]
+    assert "available_actions" in snapshot
+    assert "Bob" not in snapshot["players"]
+    assert "known_blueprints" not in snapshot["players"]["Alice"]
+    assert "skills" not in snapshot["players"]["Alice"]
+    assert "processes" not in snapshot

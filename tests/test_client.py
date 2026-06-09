@@ -306,7 +306,13 @@ def test_slash_choices_use_current_player_location_and_inventory():
         "available_actions": ["move", "pick up", "drop"],
         "players": {
             "Alice": {"name": "Alice", "connected": True, "location": "beach", "carried": [{"item": "coconut", "qty": 1}]},
-            "Bob": {"name": "Bob", "connected": True, "location": "rocks", "carried": [{"item": "stones", "qty": 1}]},
+            "Bob": {
+                "name": "Bob",
+                "connected": True,
+                "location": "rocks",
+                "carried": [{"item": "stones", "qty": 1}],
+                "available_actions": ["move", "pick up", "drop"],
+            },
         },
         "locations": {
             "beach": {"ground": [{"item": "coconut", "qty": 1}]},
@@ -478,6 +484,37 @@ def test_world_panel_shows_all_discovered_locations_not_only_current_location():
     assert "Scene: beach" in panel
     assert "sea — open salt water" in panel
     assert "path to rocks — discovered route" in panel
+
+
+def test_full_snapshot_hides_undiscovered_locations_from_scene_and_move_choices():
+    snapshot = {
+        "day": 1,
+        "minute": 6 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {"Alice": {"name": "Alice", "location": "beach", "carried": [], "available_actions": ["move"]}},
+        "locations": {
+            "beach": {"name": "beach", "discovered": True, "features": [], "resources": {}, "ground": [], "placed": []},
+            "jungle outskirts": {"name": "jungle outskirts", "discovered": True, "features": [], "resources": {}, "ground": [], "placed": []},
+            "rocks": {"name": "rocks", "discovered": False, "features": [], "resources": {}, "ground": [], "placed": []},
+        },
+    }
+
+    panel = format_world_panel(snapshot, player_name="Alice", lang="en")
+    choices = command_choices(snapshot, player_name="Alice")
+
+    assert "path to jungle outskirts — discovered route" in panel
+    assert "path to rocks" not in panel
+    assert "/move jungle outskirts" in choices
+    assert "/move rocks" not in choices
+    assert "/move <location>" in choices
+    assert command_to_message("/move rocks", snapshot, "Alice") is None
+    assert command_to_message("/move jungle outskirts", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "move",
+        "args": {"location": "jungle outskirts"},
+    }
 
 
 def test_client_ui_text_supports_english_and_chinese():

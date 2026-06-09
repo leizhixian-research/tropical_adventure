@@ -225,6 +225,11 @@ class World:
         return world
 
 
+def log_event(world: World, message: str) -> None:
+    world.event_log.append(message)
+    del world.event_log[:-MAX_EVENT_LOG]
+
+
 def add_items(stacks: list[ItemStack], item: str, qty: int = 1, *, age_minutes: int = 0, exposed: bool = True) -> None:
     if qty <= 0:
         return

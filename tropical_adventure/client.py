@@ -401,9 +401,13 @@ def command_choices(snapshot: dict[str, Any], player_name: str | None = None) ->
     locations = snapshot.get("locations", {})
     loc = locations.get(current_location, {}) if current_location else {}
 
-    for action in snapshot.get("available_actions", []):
+    for action in available_actions_for_snapshot(snapshot, player_name):
         if action == "move":
-            destinations = [name for name in locations if name != current_location]
+            destinations = [
+                name
+                for name, location in locations.items()
+                if name != current_location and location.get("discovered", True)
+            ]
             choices.extend(f"/move {name}" for name in destinations)
             choices.append("/move <location>")
         elif action == "pick up":
@@ -524,7 +528,7 @@ def should_focus_command_input(key: str) -> bool:
     return key not in {"pageup", "pagedown", "home", "end", "ctrl+c"}
 
 
-def command_to_message(text: str, snapshot: dict[str, Any]) -> dict[str, Any] | None:
+def command_to_message(text: str, snapshot: dict[str, Any], player_name: str | None = None) -> dict[str, Any] | None:
     text = text.strip()
     if not text:
         return None
@@ -541,7 +545,11 @@ def command_to_message(text: str, snapshot: dict[str, Any]) -> dict[str, Any] | 
     if command == "move":
         return {"type": "start_action", "action": "move", "args": {}}
     if command.startswith("move "):
-        return {"type": "start_action", "action": "move", "args": {"location": canonical_object_name(command.removeprefix("move ").strip())}}
+        destination = canonical_object_name(command.removeprefix("move ").strip())
+        location = snapshot.get("locations", {}).get(destination)
+        if location is not None and not location.get("discovered", True):
+            return None
+        return {"type": "start_action", "action": "move", "args": {"location": destination}}
     if command in {"pick up", "pickup"}:
         return {"type": "start_action", "action": "pick up", "args": {}}
     if command.startswith("pick up "):
@@ -556,9 +564,15 @@ def command_to_message(text: str, snapshot: dict[str, Any]) -> dict[str, Any] | 
         return {"type": "start_action", "action": "forage", "args": {"item": canonical_object_name(command.removeprefix("forage ").strip())}}
     if command.startswith("gather "):
         return {"type": "start_action", "action": "gather", "args": {"item": canonical_object_name(command.removeprefix("gather ").strip())}}
-    if command in snapshot.get("available_actions", []) or command in ACTION_DURATIONS:
+    if command in available_actions_for_snapshot(snapshot, player_name) or command in ACTION_DURATIONS:
         return {"type": "start_action", "action": command, "args": {}}
     return None
+
+
+def available_actions_for_snapshot(snapshot: dict[str, Any], player_name: str | None = None) -> list[str]:
+    if player_name:
+        return list(snapshot.get("players", {}).get(player_name, {}).get("available_actions", []))
+    return list(snapshot.get("available_actions", []))
 
 
 def _stat_danger(name: str, value: int) -> int:
@@ -619,17 +633,18 @@ def format_world_panel(snapshot: dict[str, Any], player_name: str, lang: str = "
     for stack in reversed(current_loc["ground"]):
         item = str(stack["item"])
         scene_lines.append(f"  {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang)}")
-    for name in sorted(snapshot["locations"]):
-        if name != current:
+    for name, location in sorted(snapshot["locations"].items()):
+        if name != current and location.get("discovered", True):
             path = f"通往 {object_name(name, lang)} 的路" if lang == "zh" else f"path to {name}"
             route_description = "已发现的路线" if lang == "zh" else "discovered route"
             scene_lines.append(f"  {path} — {route_description}")
     if len(scene_lines) == 1:
         scene_lines.append(f"  {ui_text('none', lang)}")
+    light = str(snapshot.get("lights", {}).get(current, snapshot.get("light", "daylight")))
     lines = [
         ui_text("global", lang),
         f"  {clock}",
-        f"  {ui_text('weather', lang)}: {snapshot['weather']} {ui_text('light', lang)}: {snapshot['light']} {ui_text('paused', lang)}: {snapshot['paused']}",
+        f"  {ui_text('weather', lang)}: {snapshot['weather']} {ui_text('light', lang)}: {light} {ui_text('paused', lang)}: {snapshot['paused']}",
         "",
         *scene_lines,
     ]
@@ -673,7 +688,7 @@ class NetworkClient:
             except ValueError as exc:
                 msg = {"type": "error", "message": str(exc)}
             if msg is None:
-                await self.queue.put({"type": "error", "message": "server disconnected"})
+                await self.queue.put({"type": "exit", "message": "server disconnected"})
                 return
             await self.queue.put(msg)
 
@@ -836,7 +851,7 @@ if App is not object:
             if not text:
                 return
             try:
-                msg = command_to_message(text, self.snapshot)
+                msg = command_to_message(text, self.snapshot, self.net.name)
                 if msg:
                     feedback = action_feedback_event(msg, self.net.name)
                     if feedback:

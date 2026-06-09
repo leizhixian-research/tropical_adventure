@@ -16,6 +16,7 @@ from .models import (
     add_items,
     clamp,
     count_item,
+    log_event,
     remove_items,
 )
 
@@ -117,24 +118,40 @@ def new_world(seed: int = 1) -> World:
     }
     add_items(world.locations["beach"].ground, "coconut", 2)
     add_items(world.locations["beach"].ground, "sticks", 2)
-    world.event_log.append("Day 1 dawns on the beach.")
+    log_event(world, "Day 1 dawns on the beach.")
     return world
 
 
 def world_snapshot(world: World, player_name: str) -> dict[str, Any]:
-    data = world.to_dict()
     player = world.players[player_name]
-    data["locations"] = {
-        name: location.to_dict()
-        for name, location in world.locations.items()
-        if location.discovered or name == player.location
-    }
+    current_location = world.locations[player.location]
     hour = world.minute // 60
-    loc = world.locations[player.location]
-    data["light"] = "daylight" if 6 <= hour < 18 else "firelit" if active_fire(loc) else "dark"
-    data["paused"] = world.paused
-    data["available_actions"] = available_actions(world, player_name)
-    return data
+    daylight = 6 <= hour < 18
+    player_data = {
+        "name": player.name,
+        "location": player.location,
+        "connected": player.connected,
+        "needs": dict(player.needs),
+        "carried": [item.to_dict() for item in player.carried],
+        "current_action": player.current_action.to_dict() if player.current_action else None,
+    }
+    actions = available_actions(world, player_name)
+    player_data["available_actions"] = actions
+    locations = {player.location: current_location.to_dict()}
+    for name, location in world.locations.items():
+        if name != player.location and location.discovered:
+            locations[name] = {"name": name, "discovered": True, "features": [], "ground": [], "placed": [], "resources": {}}
+    return {
+        "day": world.day,
+        "minute": world.minute,
+        "weather": world.weather,
+        "locations": locations,
+        "players": {player_name: player_data},
+        "event_log": world.event_log[-MAX_EVENT_LOG:],
+        "light": "daylight" if daylight else "firelit" if active_fire(current_location) else "dark",
+        "paused": world.paused,
+        "available_actions": actions,
+    }
 
 
 def join_player(world: World, name: str) -> Player:
@@ -145,19 +162,19 @@ def join_player(world: World, name: str) -> Player:
         raise ValueError("player name already connected")
     if existing:
         existing.connected = True
-        world.event_log.append(f"{name} reconnected.")
+        log_event(world, f"{name} reconnected.")
         return existing
     player = Player(name=name, connected=True)
     player.known_blueprints = set(STARTING_BLUEPRINTS)
     world.players[name] = player
-    world.event_log.append(f"{name} joined the island.")
+    log_event(world, f"{name} joined the island.")
     return player
 
 
 def disconnect_player(world: World, name: str) -> None:
     if name in world.players:
         world.players[name].connected = False
-        world.event_log.append(f"{name} disconnected; their personal state is frozen.")
+        log_event(world, f"{name} disconnected; their personal state is frozen.")
 
 
 def active_fire(location: Location) -> PlacedObject | None:
@@ -248,7 +265,7 @@ def start_action(world: World, player_name: str, action_name: str, args: dict[st
         reserved.extend(remove_items(player.carried, item, int(args.get("qty", 1))))
     total = ACTION_DURATIONS[action_name]
     player.current_action = Action(action_name, total, total, args, reserved)
-    world.event_log.append(f"{player.name} started {action_name}.")
+    log_event(world, f"{player.name} started {action_name}.")
 
 
 def cancel_action(world: World, player_name: str) -> None:
@@ -266,7 +283,7 @@ def cancel_action(world: World, player_name: str) -> None:
     for stack in action.reserved:
         add_items(target, stack.item, stack.qty, age_minutes=stack.age_minutes, exposed=stack.exposed)
     player.current_action = None
-    world.event_log.append(f"{player.name} cancelled {action.name}.")
+    log_event(world, f"{player.name} cancelled {action.name}.")
 
 
 def tick_world(world: World) -> bool:
@@ -279,7 +296,7 @@ def tick_world(world: World) -> bool:
     while world.minute >= 1440:
         world.minute -= 1440
         world.day += 1
-        world.event_log.append(f"Day {world.day} begins.")
+        log_event(world, f"Day {world.day} begins.")
     update_weather(world)
     for player in list(world.players.values()):
         if player.connected:
@@ -436,7 +453,7 @@ def complete_action(world: World, player: Player, action: Action) -> None:
         player.conditions["treated_wound"] = 1
         player.conditions["pain"] = clamp(player.conditions.get("pain", 0) - 15)
     unlock_from_skill(player)
-    world.event_log.append(f"{player.name} completed {name}.")
+    log_event(world, f"{player.name} completed {name}.")
 
 
 def gather_item_for_location(location: str) -> str:
@@ -457,7 +474,7 @@ def discover_next(world: World, player: Player) -> None:
             player.known_blueprints.update({"fire"} if name == "jungle outskirts" else set())
             player.known_blueprints.update({"shelter", "raincatcher"} if name == "rocks" else set())
             player.known_blueprints.update({"cook fish", "boil water"} if name == "tide pool" else set())
-            world.event_log.append(f"{player.name} discovered {name}.")
+            log_event(world, f"{player.name} discovered {name}.")
             return
     add_items(player.carried, "stones", 1)
 
@@ -519,7 +536,7 @@ def update_world_processes(world: World, dt: int) -> None:
                 if obj.fuel <= 0:
                     obj.active = False
                     obj.kind = "fire remnants"
-                    world.event_log.append(f"A fire at {loc.name} burned out.")
+                    log_event(world, f"A fire at {loc.name} burned out.")
             if obj.kind == "raincatcher" and obj.active:
                 if world.weather in {"rain", "storm"}:
                     obj.data["rain_minutes"] = obj.data.get("rain_minutes", 0) + dt
@@ -537,7 +554,7 @@ def update_world_processes(world: World, dt: int) -> None:
             if process.output:
                 add_items(loc.ground, process.output, 1)
             world.processes.remove(process)
-            world.event_log.append(f"{process.kind} at {process.location} produced {process.output}.")
+            log_event(world, f"{process.kind} at {process.location} produced {process.output}.")
 
 
 def update_location_resources(world: World, dt: int) -> None:
@@ -554,7 +571,7 @@ def update_location_resources(world: World, dt: int) -> None:
             while regen_minutes and resource["regen_progress"] >= regen_minutes and int(resource.get("qty", 0)) < capacity:
                 resource["regen_progress"] -= regen_minutes
                 resource["qty"] = int(resource.get("qty", 0)) + 1
-                world.event_log.append(f"{item} regrew at {loc.name}.")
+                log_event(world, f"{item} regrew at {loc.name}.")
 
 def update_items(world: World, dt: int) -> None:
     for loc in world.locations.values():
@@ -570,10 +587,10 @@ def update_item_stacks(world: World, stacks, dt: int, *, dry: bool, place: str) 
         stack.age_minutes += dt
         if stack.item == "raw fish" and stack.age_minutes >= 720:
             stacks.remove(stack)
-            world.event_log.append(f"Raw fish spoiled at {place}.")
+            log_event(world, f"Raw fish spoiled at {place}.")
         elif stack.item == "cooked fish" and stack.age_minutes >= 1440:
             stacks.remove(stack)
-            world.event_log.append(f"Cooked fish spoiled at {place}.")
+            log_event(world, f"Cooked fish spoiled at {place}.")
         elif stack.item in {"clean water", "unsafe water"} and stack.exposed and dry and stack.age_minutes >= 360:
             stacks.remove(stack)
-            world.event_log.append(f"Exposed {stack.item} evaporated at {place}.")
+            log_event(world, f"Exposed {stack.item} evaporated at {place}.")
