@@ -485,7 +485,7 @@ async def test_move_completion_updates_location_and_event_log(running_server):
         if msg and msg.get("type") == "snapshot" and "move" in msg["snapshot"]["players"]["Alice"]["available_actions"]:
             break
     else:
-        raise AssertionError("explore did not unlock move")
+        raise AssertionError("explore did not reveal a move action")
 
     await write_json_line(writer, {"type": "start_action", "action": "move", "args": {"location": "jungle outskirts"}})
     for _ in range(30):
