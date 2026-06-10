@@ -12,32 +12,116 @@ from tropical_adventure.client import (
     should_focus_command_input,
     ui_text,
 )
+from tropical_adventure.content import RAFT_EVENT_PASSING_SHIP, RAFT_RESCUE_DISTANCE
 
 
-def test_player_panel_sorts_stats_by_danger_and_only_lists_current_player_state():
+def test_player_panel_sorts_normalized_stats_low_to_high_and_colors_urgency():
     snapshot = {
         "players": {
             "Alice": {
                 "name": "Alice",
                 "connected": True,
                 "location": "beach",
-                "needs": {"health": 100, "hunger": 20, "thirst": 80, "fatigue": 60, "morale": 70, "stress": 10},
+                "stats": {
+                    "health": 100,
+                    "hydration": 15,
+                    "stamina": 20,
+                    "morale": 55,
+                    "calm": 19,
+                    "food_poisoning_recovery": 18,
+                    "coconut_appetite": 45,
+                },
             },
             "Bob": {
                 "name": "Bob",
                 "connected": True,
                 "location": "beach",
-                "needs": {"health": 20, "hunger": 100, "thirst": 90, "fatigue": 90, "morale": 90, "stress": 90},
+                "stats": {"health": 1, "hydration": 1, "stamina": 1},
             },
         }
     }
 
     panel = format_players_panel(snapshot, player_name="Alice", lang="en")
+    chinese_panel = format_players_panel(snapshot, player_name="Alice", lang="zh")
 
-    alice_lines = [line.strip() for line in panel.splitlines()]
-    assert alice_lines.index("hunger  20") < alice_lines.index("health  100")
+    assert (
+        panel.index("hydration")
+        < panel.index("food poisoning recovery")
+        < panel.index("calm")
+        < panel.index("stamina")
+        < panel.index("coconut appetite")
+        < panel.index("morale")
+    )
+    assert "[red] 15" in panel
+    assert "[red] 18" in panel
+    assert "[red] 19" in panel
+    assert "[yellow] 20" in panel
+    assert "[yellow] 45" in panel
+    assert "[green] 55" in panel
     assert "Alice" in panel
     assert "Bob" not in panel
+    assert "水分" in chinese_panel
+    assert "体力" in chinese_panel
+    assert "食物中毒恢复" in chinese_panel
+    assert "椰子食欲" in chinese_panel
+
+
+def test_outcomes_and_player_status_render_in_english_and_chinese():
+    snapshot = {
+        "day": 7,
+        "minute": 14 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "outcome": {
+            "kind": "win",
+            "player": "Alice",
+            "reason": "rescued by passing ship",
+            "day": 7,
+            "minute": 14 * 60,
+        },
+        "raft": {
+            "distance": 672,
+            "rescue_distance": RAFT_RESCUE_DISTANCE,
+            "event": RAFT_EVENT_PASSING_SHIP,
+            "event_remaining_minutes": 45,
+            "signal_progress": 60,
+            "missed_ships": 0,
+        },
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "connected": True,
+                "status": "escaped",
+                "location": "raft",
+                "stats": {"health": 75, "hydration": 60},
+            },
+        },
+        "locations": {
+            "raft": {
+                "features": ["sea"],
+                "location_cards": [],
+                "resources": {},
+                "ground": [],
+                "placed": [],
+            },
+        },
+    }
+
+    world_en = format_world_panel(snapshot, "Alice", "en")
+    world_zh = format_world_panel(snapshot, "Alice", "zh")
+    assert "Alice (escaped) @ raft" in format_players_panel(snapshot, "Alice", "en")
+    assert "Outcome: Victory — Alice: rescued by passing ship" in world_en
+    assert f"Raft voyage: 672/{RAFT_RESCUE_DISTANCE}" in world_en
+    assert "Passing ship: signal 60/100, 45m left" in world_en
+    assert "Alice (已逃离) @ 木筏" in format_players_panel(snapshot, "Alice", "zh")
+    assert "结局：胜利 — Alice：被过往船只救起" in world_zh
+    assert f"木筏航程：672/{RAFT_RESCUE_DISTANCE}" in world_zh
+    assert "过往船只：示意 60/100，剩余 45 分钟" in world_zh
+    assert "Alice被船只救起了。" in format_event_log(
+        ["Alice was rescued by a ship."],
+        "zh",
+    )
 
 
 def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
@@ -77,10 +161,14 @@ def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
     assert "coconut palms — shade and coconuts; coconut: 2/2 available; regrows every 3 days" in panel
     assert "sand castle — a fragile little monument" in panel
     assert "fire(fuel 4) — active fire with fuel 4" in panel
-    assert "1 raw fish — half fresh; spoils in 6h" in panel
+    assert "1 raw fish — half fresh; spoils in 6h; freshness  50 █████░░░░░" in panel
     assert "1 coconut — fresh food and drink" in panel
     assert "3 sticks — dry fuel and building material" in panel
-    assert panel.index("1 raw fish — half fresh; spoils in 6h") < panel.index("1 coconut — fresh food and drink") < panel.index("3 sticks — dry fuel and building material")
+    assert (
+        panel.index("1 raw fish — half fresh; spoils in 6h")
+        < panel.index("1 coconut — fresh food and drink")
+        < panel.index("3 sticks — dry fuel and building material")
+    )
     assert "path to rocks — discovered route" in panel
     assert "/pick up" not in panel
     assert "/move" not in panel
@@ -88,7 +176,48 @@ def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
     assert "Inventory" not in panel
 
     inventory = format_inventory_panel(snapshot, player_name="Alice", lang="en")
-    assert inventory.splitlines() == ["Inventory", "  1 stones", "  2 coconut"]
+    assert inventory.splitlines() == [
+        "Inventory",
+        "  1 stones — hard stones for tools",
+        "  2 coconut — fresh food and drink",
+    ]
+
+
+def test_world_panel_lists_other_players_as_scene_objects_with_public_action_only():
+    snapshot = {
+        "day": 1,
+        "minute": 360,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {
+            "Alice": {"name": "Alice", "connected": True, "location": "beach", "stats": {"health": 100}},
+            "Bob": {
+                "name": "Bob",
+                "connected": True,
+                "location": "beach",
+                "current_action": {"name": "rest", "remaining_minutes": 12, "total_minutes": 30},
+            },
+            "Cara": {"name": "Cara", "connected": True, "location": "rocks"},
+            "Dan": {"name": "Dan", "connected": False, "location": "beach"},
+        },
+        "locations": {
+            "beach": {"features": [], "location_cards": [], "resources": {}, "ground": [], "placed": []},
+            "rocks": {"features": [], "location_cards": [], "resources": {}, "ground": [], "placed": []},
+        },
+    }
+
+    player_panel = format_players_panel(snapshot, "Alice", "en")
+    world_en = format_world_panel(snapshot, "Alice", "en")
+    world_zh = format_world_panel(snapshot, "Alice", "zh")
+
+    assert "Alice" in player_panel
+    assert "Bob" not in player_panel
+    assert "Bob — survivor here, resting (12m left)" in world_en
+    assert "Bob — 同伴在这里，正在休息，剩余 12 分钟" in world_zh
+    assert "Cara" not in world_en
+    assert "Dan" not in world_en
+    assert "health" not in world_en
 
 
 def test_event_log_panel_is_fixed_5_line_snapshot_without_scrollbars():
@@ -258,6 +387,16 @@ def test_direct_slash_action_maps_to_start_action():
     assert command_to_message("/craft sharp stone", snapshot) == {
         "type": "start_action",
         "action": "craft sharp stone",
+        "args": {},
+    }
+
+
+def test_defined_slash_action_maps_even_when_not_currently_available():
+    snapshot = {"available_actions": []}
+
+    assert command_to_message("/cook coconut fish", snapshot) == {
+        "type": "start_action",
+        "action": "cook coconut fish",
         "args": {},
     }
 
@@ -534,7 +673,13 @@ def test_world_panel_renders_location_cards_inside_area():
         "weather": "clear",
         "light": "daylight",
         "paused": False,
-        "players": {"Alice": {"name": "Alice", "location": "rocks"}},
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "rocks",
+                "available_actions": ["harvest coconuts", "forage tide pool"],
+            }
+        },
         "locations": {
             "rocks": {
                 "features": ["stone outcrops"],
@@ -613,6 +758,543 @@ def test_client_ui_text_supports_english_and_chinese():
         "Alice",
         "zh",
     )
+
+
+def test_new_card_survival_content_renders_with_chinese_support():
+    snapshot = {
+        "day": 1,
+        "minute": 360,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "available_actions": [
+            "harvest coconuts",
+            "harvest aloe vera",
+            "brew ginger tea",
+            "apply bug repellent",
+            "forage tide pool",
+            "build fish trap",
+            "check snare trap",
+        ],
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "rocks",
+                "carried": [{"item": "ginger tea", "qty": 1}, {"item": "bug repellent", "qty": 1}],
+                "available_actions": [
+                    "harvest coconuts",
+                    "harvest aloe vera",
+                    "brew ginger tea",
+                    "apply bug repellent",
+                    "forage tide pool",
+                    "build fish trap",
+                    "check snare trap",
+                ],
+            }
+        },
+        "locations": {
+            "rocks": {
+                "features": ["sand"],
+                "location_cards": ["tide pool"],
+                "resources": {
+                    "aloe vera": {"source": "sand", "qty": 1, "capacity": 1, "regen_minutes": 10080, "action": "harvest aloe vera"}
+                },
+                "ground": [
+                    {"item": "dried fish", "qty": 1},
+                    {"item": "cooked meat", "qty": 1},
+                    {"item": "nipa seeds", "qty": 4},
+                    {"item": "coffee", "qty": 1},
+                    {"item": "magic mushrooms", "qty": 1},
+                ],
+                "placed": [
+                    {"kind": "drying rack", "fuel": 0},
+                    {"kind": "fish trap", "fuel": 0, "data": {"soak_minutes": 120, "target_minutes": 1500}},
+                    {"kind": "snare trap", "fuel": 0, "data": {"ready": 1, "catch": "raw meat"}},
+                ],
+            }
+        },
+    }
+    menu = CommandMenuState(command_choices(snapshot, "Alice"))
+    menu.update("/")
+
+    panel = format_world_panel(snapshot, "Alice", "zh")
+    rendered_menu = menu.render(lang="zh")
+    log = format_event_log(["Alice started harvest coconuts."], lang="zh")
+    process_log = format_event_log(["drying at beach produced dried fish."], lang="zh")
+
+    assert "潮池" in panel
+    assert "芦荟：1/1 可用" in panel
+    assert "晾晒架" in panel
+    assert "捕鱼陷阱" in panel
+    assert "120/1500" in panel
+    assert "生肉" in panel
+    assert "鱼干" in panel
+    assert "熟肉" in panel
+    assert "水椰籽" in panel
+    assert "咖啡" in panel
+    assert "迷幻菇" in panel
+    assert "姜茶" in format_inventory_panel(snapshot, "Alice", "zh")
+    assert "驱虫膏" in format_inventory_panel(snapshot, "Alice", "zh")
+    assert "/harvest coconuts" in rendered_menu
+    assert "/harvest aloe vera" in rendered_menu
+    assert "/brew ginger tea" in rendered_menu
+    assert "/build fish trap" in rendered_menu
+    assert "爬上棕榈树采下椰子" in rendered_menu
+    assert "采下一片含凝胶的芦荟叶" in rendered_menu
+    assert "用热水泡姜以缓解恶心并提升免疫" in rendered_menu
+    assert "编一个会随时间捕获海产的沿海陷阱" in rendered_menu
+    assert "Alice 开始采椰子。" in log
+    assert "晾晒在海滩产出了鱼干。" in process_log
+    assert command_to_message("/drop 姜茶", snapshot) == {
+        "type": "start_action",
+        "action": "drop",
+        "args": {"item": "ginger tea"},
+    }
+
+
+def test_sago_content_renders_as_direct_scene_actions_with_chinese_support():
+    snapshot = {
+        "day": 1,
+        "minute": 360,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "available_actions": ["cut sago palm", "split sago log", "scrape sago pith", "cook sago flatbread", "drop"],
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "wetlands",
+                "carried": [{"item": "sago flatbread", "qty": 1}, {"item": "sago flour", "qty": 2}],
+                "available_actions": ["cut sago palm", "split sago log", "scrape sago pith", "cook sago flatbread", "drop"],
+            }
+        },
+        "locations": {
+            "wetlands": {
+                "features": ["sago palms"],
+                "resources": {
+                    "sago palm": {
+                        "source": "sago palms",
+                        "qty": 2,
+                        "capacity": 2,
+                        "regen_minutes": 20160,
+                        "action": "cut sago palm",
+                    }
+                },
+                "ground": [
+                    {"item": "sago sawdust", "qty": 1},
+                    {"item": "soaked sago", "qty": 1},
+                    {"item": "sago pulp", "qty": 1},
+                ],
+                "placed": [{"kind": "fire", "fuel": 1}],
+            }
+        },
+    }
+    menu = CommandMenuState(command_choices(snapshot, "Alice"))
+    menu.update("/")
+
+    panel = format_world_panel(snapshot, "Alice", "zh")
+    inventory = format_inventory_panel(snapshot, "Alice", "zh")
+    rendered_menu = menu.render(lang="zh")
+
+    assert "西米棕榈" in panel
+    assert "西米棕榈：2/2 可用" in panel
+    assert "西米木屑" in panel
+    assert "湿西米" in panel
+    assert "西米浆" in panel
+    assert "西米薄饼" in inventory
+    assert "西米粉" in inventory
+    assert "/cut sago palm" in rendered_menu
+    assert "/cook sago flatbread" in rendered_menu
+    assert "砍倒西米棕榈以取得富含淀粉的髓心" in rendered_menu
+    assert "把西米粉烤成饱腹的薄饼" in rendered_menu
+    assert command_to_message("/drop 西米薄饼", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "drop",
+        "args": {"item": "sago flatbread"},
+    }
+
+
+def test_mud_salt_and_item_stats_render_with_chinese_support():
+    snapshot = {
+        "day": 3,
+        "minute": 10 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "available_actions": [
+            "dig up mud",
+            "make clay",
+            "shape clay jar",
+            "fill vessel",
+            "drink from vessel",
+            "cook coconut fish",
+            "build salt bed",
+            "build water reservoir",
+            "build well",
+            "build cistern",
+            "build advanced kiln",
+            "build forge",
+            "mine copper ore",
+            "smelt copper",
+            "build stone hut",
+            "fuel kiln",
+            "fill salt bed",
+            "scrape salt",
+            "drop",
+        ],
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "mangrove forest",
+                "carried": [
+                    {"item": "sharp stone", "qty": 1, "data": {"durability": 20, "max_durability": 40}},
+                    {
+                        "item": "clay jar",
+                        "qty": 1,
+                        "data": {"liquid_capacity": 150, "sealed": 1, "liquid_type": "clean water", "liquid": 50},
+                    },
+                    {"item": "coconut fish", "qty": 1, "age_minutes": 240},
+                    {"item": "salt", "qty": 4},
+                    {"item": "mud brick", "qty": 12},
+                    {"item": "clay", "qty": 6},
+                    {"item": "salt water", "qty": 1},
+                    {"item": "copper ore", "qty": 1},
+                    {"item": "copper", "qty": 1},
+                ],
+                "available_actions": [
+                    "dig up mud",
+                    "make clay",
+                    "shape clay jar",
+                    "fill vessel",
+                    "drink from vessel",
+                    "cook coconut fish",
+                    "build salt bed",
+                    "build water reservoir",
+                    "build well",
+                    "build cistern",
+                    "build advanced kiln",
+                    "build forge",
+                    "mine copper ore",
+                    "smelt copper",
+                    "build stone hut",
+                    "fuel kiln",
+                    "fill salt bed",
+                    "scrape salt",
+                    "drop",
+                ],
+            }
+        },
+        "locations": {
+            "mangrove forest": {
+                "features": ["flooded mud"],
+                "location_cards": ["mud deposit", "salt bed"],
+                "resources": {
+                    "mud deposit": {"source": "flooded mud", "qty": 2, "capacity": 3, "action": "dig up mud"}
+                },
+                "ground": [
+                    {"item": "mud pile", "qty": 1, "age_minutes": 900},
+                    {"item": "dirt pile", "qty": 2},
+                ],
+                "placed": [
+                    {"kind": "kiln", "fuel": 0, "active": True, "data": {"fuel": 48, "temperature": 600}},
+                    {
+                        "kind": "advanced kiln",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {"fuel": 48, "temperature": 600, "max_temperature": 1200},
+                    },
+                    {
+                        "kind": "forge",
+                        "fuel": 0,
+                        "active": False,
+                        "data": {"fuel": 24, "temperature": 900, "max_temperature": 1800},
+                    },
+                    {"kind": "stone hut", "fuel": 0, "active": True, "data": {}},
+                    {"kind": "salt bed", "fuel": 0, "data": {"liquid": 4800, "salt": 96}},
+                    {
+                        "kind": "water reservoir",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {"liquid": 600, "capacity": 12000, "mosquito_protection": 0},
+                    },
+                    {"kind": "well", "fuel": 0, "active": True, "data": {"liquid": 300, "capacity": 6000}},
+                    {"kind": "cistern", "fuel": 0, "active": True, "data": {"liquid": 1200, "capacity": 24000}},
+                ],
+            }
+        },
+    }
+    menu = CommandMenuState(command_choices(snapshot, "Alice"))
+    menu.update("/")
+
+    panel = format_world_panel(snapshot, "Alice", "zh")
+    inventory = format_inventory_panel(snapshot, "Alice", "zh")
+    rendered_menu = menu.render(lang="zh")
+    log = format_event_log(["Alice's sharp stone wore out.", "curing at beach produced salted fish."], lang="zh")
+
+    assert "泥土堆位置卡" in panel
+    assert "盐床位置卡" in panel
+    assert "泥土堆：2/3 可用" in panel
+    assert "盐水  50 █████░░░░░" in panel
+    assert "盐   5" in panel
+    assert "蓄水池" in panel
+    assert "净水 600/12000   5" in panel
+    assert "水井" in panel
+    assert "不安全的水 300/6000   5" in panel
+    assert "水窖" in panel
+    assert "净水 1200/24000   5" in panel
+    assert "高级窑" in panel
+    assert "锻炉" in panel
+    assert "石屋" in panel
+    assert "温度  66 ██████░░░░" in panel
+    assert "泥堆" in panel
+    assert "新鲜度" in panel
+    assert "耐久  50 █████░░░░░" in inventory
+    assert "容量 150" in inventory
+    assert "密封" in inventory
+    assert "净水 50/150" in inventory
+    assert "椰子鱼" in inventory
+    assert "泥砖" in inventory
+    assert "黏土" in inventory
+    assert "盐水" in inventory
+    assert "铜矿石" in inventory
+    assert "铜" in inventory
+    assert "/dig up mud" in rendered_menu
+    assert "/shape clay jar" in rendered_menu
+    assert "/fill vessel" in rendered_menu
+    assert "/cook coconut fish" in rendered_menu
+    assert "/build salt bed" in rendered_menu
+    assert "/build water reservoir" in rendered_menu
+    assert "/build well" in rendered_menu
+    assert "/build cistern" in rendered_menu
+    assert "/build advanced kiln" in rendered_menu
+    assert "/build forge" in rendered_menu
+    assert "/mine copper ore" in rendered_menu
+    assert "/smelt copper" in rendered_menu
+    assert "/build stone hut" in rendered_menu
+    assert "从泥堆或干涸水洼挖出可加工的泥" in rendered_menu
+    assert "用黏土和灰烬塑成带盖陶罐" in rendered_menu
+    assert "用雨水或附近水源装满携带的陶器" in rendered_menu
+    assert "用陶锅把鱼、椰子和蔬菜煮成椰子鱼" in rendered_menu
+    assert "用泥砖和黏土建造蒸发海水的盐床" in rendered_menu
+    assert "用泥砖和黏土建造会接雨的大蓄水池" in rendered_menu
+    assert "在湿地挖井并砌边，让它缓慢积蓄不安全的水" in rendered_menu
+    assert "建造密封的地下水窖来储存雨水" in rendered_menu
+    assert "建造可用于陶器和铜冶炼的高温砂浆窑" in rendered_menu
+    assert "建造用于冶炼铜的紧凑高温锻炉" in rendered_menu
+    assert "敲开铜矿脉，采出铜矿石" in rendered_menu
+    assert "在高温高级窑或锻炉中开始冶炼铜矿石" in rendered_menu
+    assert "用大石和砂浆建造能抵御风暴的石屋" in rendered_menu
+    assert "Alice的锋利石片用坏了。" in log
+    assert "腌制在海滩产出了咸鱼。" in log
+    assert command_to_message("/drop 盐", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "drop",
+        "args": {"item": "salt"},
+    }
+
+
+def test_storage_items_and_shelters_render_stats_in_english_and_chinese():
+    snapshot = {
+        "day": 1,
+        "minute": 6 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "beach",
+                "carrying": {"effective_weight": 750, "capacity": 2500, "burden": 30, "relief": 500},
+                "carried": [
+                    {
+                        "item": "basket",
+                        "qty": 1,
+                        "data": {
+                            "storage_capacity": 1000,
+                            "slots": 4,
+                            "weight_reduction": 1000,
+                            "contents": [{"item": "stones", "qty": 2, "age_minutes": 0, "exposed": True, "data": {}}],
+                        },
+                    },
+                    {
+                        "item": "woven backpack",
+                        "qty": 1,
+                        "data": {
+                            "storage_capacity": 1000,
+                            "slots": 4,
+                            "weight_reduction": 1000,
+                            "equipped_weight_reduction": 250,
+                        },
+                    },
+                    {"item": "sticks", "qty": 1},
+                ],
+                "available_actions": ["pack", "unpack", "store", "retrieve", "build shed", "build storage chest", "build supply chest"],
+            }
+        },
+        "locations": {
+            "beach": {
+                "features": ["coconut palms"],
+                "resources": {},
+                "ground": [],
+                "placed": [
+                    {
+                        "kind": "shed",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {"storage_capacity": 15000, "rain_protection": 5, "sun_protection": 6},
+                    },
+                    {
+                        "kind": "storage chest",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {
+                            "storage_capacity": 4000,
+                            "slots": 1,
+                            "weight_reduction": 4000,
+                            "contents": [{"item": "rope", "qty": 1, "age_minutes": 0, "exposed": True, "data": {}}],
+                        },
+                    },
+                    {
+                        "kind": "cellar",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {"storage_capacity": 30000, "cool_storage": 1, "rain_protection": 5},
+                    },
+                ],
+            }
+        },
+    }
+
+    world_en = format_world_panel(snapshot, "Alice", "en")
+    inventory_zh = format_inventory_panel(snapshot, "Alice", "zh")
+    menu = CommandMenuState(command_choices(snapshot, "Alice"))
+    menu.update("/")
+    rendered_menu = menu.render(lang="zh")
+
+    assert "shed" in world_en
+    assert "storage 0/15000" in world_en
+    assert "storage chest" in world_en
+    assert "storage 60/4000" in world_en
+    assert "slots 1/1" in world_en
+    assert "cellar" in world_en
+    assert "cool storage" in world_en
+    assert "负重 750/2500" in inventory_zh
+    assert "篮子" in inventory_zh
+    assert "储量 200/1000" in inventory_zh
+    assert "格数 1/4" in inventory_zh
+    assert "2 石头" in inventory_zh
+    assert "装备减重 250" in inventory_zh
+    assert "/pack sticks" in rendered_menu
+    assert "/unpack stones" in rendered_menu
+    assert "/store sticks" in rendered_menu
+    assert "/retrieve rope" in rendered_menu
+    assert "/build shed" in rendered_menu
+    assert "建造可遮风雨和储物的棚屋" in rendered_menu
+    assert command_to_message("/pack 树枝", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "pack",
+        "args": {"item": "sticks"},
+    }
+    assert command_to_message("/retrieve 绳子", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "retrieve",
+        "args": {"item": "rope"},
+    }
+
+
+def test_copper_metalworking_content_renders_with_chinese_support():
+    snapshot = {
+        "day": 4,
+        "minute": 14 * 60,
+        "weather": "rain",
+        "light": "daylight",
+        "paused": False,
+        "available_actions": [
+            "shape knife mold",
+            "cast copper knife",
+            "craft copper shovel",
+            "hammer copper sheet",
+            "make copper needles",
+            "craft copper bottle",
+            "craft copper jar",
+        ],
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "beach",
+                "carried": [
+                    {"item": "copper knife", "qty": 1, "data": {"durability": 31, "max_durability": 40}},
+                    {"item": "copper shovel", "qty": 1, "data": {"durability": 42, "max_durability": 50}},
+                    {"item": "copper bottle", "qty": 1, "data": {"liquid_capacity": 600, "sealed": 1}},
+                    {
+                        "item": "copper jar",
+                        "qty": 1,
+                        "data": {"liquid_capacity": 150, "sealed": 1, "cookable": 1, "liquid_type": "clean water", "liquid": 50},
+                    },
+                    {"item": "copper sheet", "qty": 1},
+                    {"item": "copper needle", "qty": 4},
+                    {"item": "knife mold", "qty": 1},
+                ],
+                "available_actions": [
+                    "shape knife mold",
+                    "cast copper knife",
+                    "craft copper shovel",
+                    "hammer copper sheet",
+                    "make copper needles",
+                    "craft copper bottle",
+                    "craft copper jar",
+                ],
+            }
+        },
+        "locations": {
+            "beach": {
+                "features": ["sea"],
+                "location_cards": ["copper vein"],
+                "resources": {},
+                "ground": [{"item": "axe mold", "qty": 1}, {"item": "spear head", "qty": 1}],
+                "placed": [
+                    {
+                        "kind": "forge",
+                        "fuel": 0,
+                        "active": True,
+                        "data": {"fuel": 48, "temperature": 1100, "max_temperature": 1800},
+                    }
+                ],
+            }
+        },
+    }
+    menu = CommandMenuState(command_choices(snapshot, "Alice"))
+    menu.update("/")
+
+    panel = format_world_panel(snapshot, "Alice", "zh")
+    inventory = format_inventory_panel(snapshot, "Alice", "zh")
+    rendered_menu = menu.render(lang="zh")
+
+    assert "铜矿脉位置卡" in panel
+    assert "锻炉" in panel
+    assert "斧头模具" in panel
+    assert "矛头" in panel
+    assert "铜刀" in inventory
+    assert "耐久  77 ███████░░░" in inventory
+    assert "铜铲" in inventory
+    assert "耐久  84 ████████░░" in inventory
+    assert "铜瓶" in inventory
+    assert "容量 600" in inventory
+    assert "铜罐" in inventory
+    assert "净水 50/150" in inventory
+    assert "铜板" in inventory
+    assert "铜针" in inventory
+    assert "刀模具" in inventory
+    assert "/shape knife mold" in rendered_menu
+    assert "/cast copper knife" in rendered_menu
+    assert "/craft copper shovel" in rendered_menu
+    assert "/hammer copper sheet" in rendered_menu
+    assert "/make copper needles" in rendered_menu
+    assert "/craft copper bottle" in rendered_menu
+    assert "/craft copper jar" in rendered_menu
+    assert "用调和泥和铜塑出铜刀模具" in rendered_menu
+    assert "在高温高级窑或锻炉中烧出铜刀" in rendered_menu
+    assert "把铜板做成小型密封铜罐" in rendered_menu
 
 
 def test_exit_command_maps_to_exit_message():
