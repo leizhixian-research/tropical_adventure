@@ -93,9 +93,13 @@ class GameServer:
                     if not await self.handle_message(player.name, writer, msg):
                         break
                 except ValueError as exc:
-                    await write_json_line(writer, {"type": "error", "message": str(exc)})
+                    with contextlib.suppress(ConnectionError, OSError):
+                        await write_json_line(writer, {"type": "error", "message": str(exc)})
         except ValueError as exc:
-            await write_json_line(writer, {"type": "error", "message": str(exc)})
+            with contextlib.suppress(ConnectionError, OSError):
+                await write_json_line(writer, {"type": "error", "message": str(exc)})
+        except (ConnectionError, OSError):
+            pass
         finally:
             if player_name:
                 disconnected = await self.remove_client_if_current(player_name, writer)

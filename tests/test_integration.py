@@ -51,12 +51,32 @@ class DelayedFailingWriter:
 class RecordingWriter:
     def __init__(self):
         self.messages = []
+        self.closed = False
 
     def write(self, data):
         self.messages.append(json.loads(data.decode("utf-8")))
 
     async def drain(self):
         pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
+class ResettingReader:
+    def __init__(self, *messages):
+        self.lines = [
+            json.dumps(message, separators=(",", ":")).encode("utf-8") + b"\n"
+            for message in messages
+        ]
+
+    async def readline(self):
+        if self.lines:
+            return self.lines.pop(0)
+        raise ConnectionResetError("client reset")
 
 
 async def connect_client(port, name, invite=None):
@@ -172,6 +192,19 @@ async def test_stale_client_cleanup_does_not_disconnect_newer_connection(tmp_pat
     finally:
         srv.close()
         await srv.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_forced_client_disconnect_does_not_escape_handler(tmp_path):
+    server = GameServer(str(tmp_path / "island.json"))
+    reader = ResettingReader({"type": "join", "name": "Alice"})
+    writer = RecordingWriter()
+
+    await server.handle_client(reader, writer)
+
+    assert writer.closed
+    assert server.clients == {}
+    assert not server.world.players["Alice"].connected
 
 
 @pytest.mark.asyncio

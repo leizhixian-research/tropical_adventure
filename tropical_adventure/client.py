@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import contextlib
 import re
+import unicodedata
 from typing import Any
 
 from .content import (
@@ -1145,8 +1146,13 @@ def localized_outcome_reason(reason: str | None, lang: str = "en") -> str:
 
 def command_description(command: str, lang: str = "en") -> str:
     descriptions = COMMAND_DESCRIPTIONS.get(lang, COMMAND_DESCRIPTIONS["en"])
-    fallback = COMMAND_DESCRIPTIONS["en"].get(command, "start this action")
-    return descriptions.get(command, fallback)
+    if command in descriptions:
+        return descriptions[command]
+    if lang == "zh":
+        label = localized_action_name(command, lang)
+        if label != command:
+            return label
+    return COMMAND_DESCRIPTIONS["en"].get(command, "start this action")
 
 
 def feature_description(feature: str, resource_notes: list[str], lang: str = "en") -> str:
@@ -1376,6 +1382,16 @@ def item_description(stack: dict[str, Any], lang: str = "en", *, carried: bool =
 def localize_event(event: str, lang: str = "en") -> str:
     if lang != "zh":
         return event
+    if event == "manual save complete":
+        return "手动保存完成。"
+    if event == "save already in progress":
+        return "保存正在进行中。"
+    if event == "server disconnected":
+        return "服务器已断开连接。"
+    if match := re.fullmatch(r"(.+) joined(?: the island)?\.?", event):
+        return f"{match[1]} 加入了小岛。"
+    if match := re.fullmatch(r"(.+) disconnected(?:; their personal state is frozen)?\.?", event):
+        return f"{match[1]} 已断开连接。"
     if match := re.fullmatch(r"Day (\d+) begins\.", event):
         return f"第 {match[1]} 天开始了。"
     if match := re.fullmatch(r"(.+) started (.+)\.", event):
@@ -1398,6 +1414,11 @@ def localize_event(event: str, lang: str = "en") -> str:
         return "一艘船鸣着汽笛，正朝木筏驶来。"
     if match := re.fullmatch(r"(.+) discovered (.+)\.", event):
         return f"{match[1]} 发现了{object_name(match[2], 'zh')}。"
+    if match := re.fullmatch(r"(.+) found (.+) at (.+)\.", event):
+        return f"{match[1]} 在{object_name(match[3], 'zh')}找到了{object_name(match[2], 'zh')}。"
+    if match := re.fullmatch(r"(.+) found (?:(\d+) )?(.+) while exploring (.+)\.", event):
+        qty = f"{match[2]} " if match[2] else ""
+        return f"{match[1]} 在探索{object_name(match[4], 'zh')}时找到了{qty}{object_name(match[3], 'zh')}。"
     if match := re.fullmatch(r"Raw fish spoiled at (.+)\.", event):
         return f"生鱼在{object_name(match[1], 'zh')}腐坏了。"
     if match := re.fullmatch(r"Cooked fish spoiled at (.+)\.", event):
@@ -1568,6 +1589,26 @@ class CommandMenuState:
             command = "retrieve"
         return command_description(command, lang)
 
+    def display_for(self, choice: str, lang: str = "en") -> str:
+        if lang != "zh" or not choice.startswith("/"):
+            return choice
+        command = choice.removeprefix("/")
+        action = command
+        target = ""
+        for prefix in ("move", "pick up", "drop", "pack", "unpack", "store", "retrieve"):
+            if command == prefix or command.startswith(f"{prefix} "):
+                action = prefix
+                target = command.removeprefix(prefix).strip()
+                break
+        if " <" in action:
+            action = action.split(" <", 1)[0]
+        action_name = localized_action_name(action, lang)
+        if target and not target.startswith("<"):
+            label = f"{action_name} {object_name(target, lang)}"
+        else:
+            label = action_name
+        return f"{choice} ({label})" if label != command else choice
+
     def render(self, lang: str = "en") -> str:
         if not self.query.startswith("/"):
             return ""
@@ -1582,7 +1623,7 @@ class CommandMenuState:
         for offset, choice in enumerate(visible):
             idx = start + offset
             marker = "›" if idx == self.index else " "
-            lines.append(f"{marker} {choice} — {self.description_for(choice, lang)}")
+            lines.append(f"{marker} {self.display_for(choice, lang)} — {self.description_for(choice, lang)}")
         remaining = len(self.matches) - start - len(visible)
         if remaining > 0:
             lines.append(f"  ↓ {remaining} more")
@@ -1734,6 +1775,14 @@ def _stat_bar(value: int) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 
+def display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1 for ch in text)
+
+
+def pad_display(text: str, width: int) -> str:
+    return text + " " * max(0, width - display_width(text))
+
+
 def _player_panel_stats(current_player: dict[str, Any]) -> list[tuple[str, int]]:
     stats = current_player.get("stats")
     if isinstance(stats, dict) and stats:
@@ -1770,10 +1819,11 @@ def format_players_panel(snapshot: dict[str, Any], player_name: str, lang: str =
         _player_panel_stats(current_player),
         key=lambda item: (item[1], PLAYER_STAT_INDEX.get(item[0], len(PLAYER_STAT_INDEX)), item[0]),
     )
-    width = max(len(stat_label(key, lang)) for key, _ in stats)
+    width = max(display_width(stat_label(key, lang)) for key, _ in stats)
     for key, value in stats:
         color = _stat_color(value)
-        lines.append(f"  {stat_label(key, lang):<{width}} [{color}]{value:3d} {_stat_bar(value)}[/{color}]")
+        label = pad_display(stat_label(key, lang), width)
+        lines.append(f"  {label} [{color}]{value:3d} {_stat_bar(value)}[/{color}]")
     return "\n".join(lines)
 
 

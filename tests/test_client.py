@@ -4,6 +4,7 @@ from tropical_adventure.client import (
     command_choices,
     command_input_key_effect,
     command_to_message,
+    display_width,
     format_event_log,
     action_feedback_event,
     format_inventory_panel,
@@ -64,6 +65,8 @@ def test_player_panel_sorts_normalized_stats_low_to_high_and_colors_urgency():
     assert "体力" in chinese_panel
     assert "食物中毒恢复" in chinese_panel
     assert "椰子食欲" in chinese_panel
+    chinese_stat_prefixes = [line.split("[", 1)[0] for line in chinese_panel.splitlines()[1:]]
+    assert len({display_width(prefix) for prefix in chinese_stat_prefixes}) == 1
 
 
 def test_outcomes_and_player_status_render_in_english_and_chinese():
@@ -240,7 +243,7 @@ def test_event_log_shows_rotating_spinner_for_ongoing_action_instead_of_started_
 
     assert first.splitlines() == ["Bob joined", "⠋ Alice exploring… 12m left"]
     assert second.splitlines() == ["Bob joined", "⠙ Alice exploring… 12m left"]
-    assert chinese.splitlines() == ["Bob joined", "⠋ Alice 正在探索… 剩余 12 分钟"]
+    assert chinese.splitlines() == ["Bob 加入了小岛。", "⠋ Alice 正在探索… 剩余 12 分钟"]
     assert action_feedback_event({"type": "start_action", "action": "explore"}, player_name="Alice") == {
         "name": "explore",
         "remaining_minutes": 18,
@@ -275,6 +278,28 @@ def test_format_event_log_localizes_common_game_events_to_chinese():
         "Alice 发现了岩石。",
         "生鱼在海滩腐坏了。",
     ]
+
+
+def test_format_event_log_localizes_server_and_exploration_events_to_chinese():
+    events = [
+        "Alice joined the island.",
+        "Bob disconnected",
+        "Alice found brimstone vent at acid lake.",
+        "Alice found 1 wood while exploring beach.",
+        "manual save complete",
+        "save already in progress",
+        "server disconnected",
+    ]
+
+    rendered = format_event_log(events, lang="zh")
+
+    assert "joined the island" not in rendered
+    assert "disconnected" not in rendered
+    assert "found brimstone vent at acid lake" not in rendered
+    assert "while exploring" not in rendered
+    assert "manual save complete" not in rendered
+    assert "save already in progress" not in rendered
+    assert "server disconnected" not in rendered
 
 
 def test_chinese_world_panel_localizes_objects_and_command_object_aliases_are_accepted():
@@ -573,12 +598,14 @@ def test_slash_menu_renders_descriptions_for_each_command():
 
 
 def test_slash_menu_renders_chinese_action_descriptions():
-    menu = CommandMenuState(["/explore", "/move <location>", "/save"])
+    menu = CommandMenuState(["/explore", "/move beach", "/move <location>", "/save"])
     menu.update("/")
     rendered = menu.render(lang="zh")
 
     assert "/explore" in rendered
+    assert "/explore (探索)" in rendered
     assert "搜索当前区域的新地点" in rendered
+    assert "/move beach (移动 海滩)" in rendered
     assert "/move <location>" in rendered
     assert "前往已发现地点" in rendered
     assert "/save" in rendered
