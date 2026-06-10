@@ -9,14 +9,19 @@ The next work should make the UI and gameplay feel like **interacting with objec
 - Player panel = only me.
 - Scene/world panel = things at my current location.
 - Other players = scene objects at the location, just like a fire, coconut, path, or ground item.
-- Inventory panel = what I can use/carry, starting with hands, then equipped bags/containers.
+- Inventory panel = what I can use/carry, sorted by most recently used or acquired item.
 - Slash commands stay direct: `/inspect Bob`, `/pick up coconut`, `/move rocks`, `/forage coconut`.
 
 Keep changes small and testable. Avoid adding a big generic object-interaction framework until 2-3 concrete interactions prove what abstraction is needed.
 
 ## Recommended next work order
 
-### 1. Show other players as objects in the scene
+Recently completed:
+
+- Other players now render as scene objects when they are connected and at the current player's location.
+- Inventory now renders a single recent-used carried list. Hands/equipment/container sections are deferred until they have distinct mechanics.
+
+### Completed: Show other players as objects in the scene
 
 **Goal:** Alice should see Bob in the world panel when Bob is at Alice's location. Bob should not appear in Alice's left/player panel.
 
@@ -136,6 +141,8 @@ Current `command_choices()` already suggests:
 - `/move <location>` from discovered locations
 - `/pick up <item>` from ground stacks
 - `/drop <item>` from carried stacks
+- `/pack <item>` and `/unpack <item>` from carried containers
+- `/store <item>` and `/retrieve <item>` from placed storage
 - `/forage <item>` and `/gather <item>` from location resources
 
 Next additions:
@@ -147,46 +154,36 @@ Next additions:
 
 Keep suggestions direct. Do not add `/action ...`.
 
-### 4. Redesign inventory panel as hands + bags
+### Completed: Simplify inventory panel to recent-used carried items
 
-**Goal:** The right panel should show game content the way the player thinks about it: what is in hands first, then bags/containers if equipped.
+**Goal:** The right panel should show immediately relevant items first without implying hands/equipment mechanics that do not exist yet.
 
 Current state:
 
 - `Player` has `carried` stacks only.
-- `format_inventory_panel()` renders all `carried` stacks in reversed order.
+- `format_inventory_panel()` renders all `carried` stacks in reversed order, so the newest model entry appears first.
+- `add_items()` moves acquired/merged stacks to the end of `Player.carried`.
+- Vessel/tool/container use moves surviving touched stacks to the end of `Player.carried`.
+- Containers are now playable inside the flat carried model: storage stacks carry nested `contents`, slot limits, stored-weight capacity, and carried-load relief.
+- There is still no distinction between hands and equipment.
 
 Recommended incremental path:
 
-1. Start with a UI-only grouping before changing the data model.
-2. Add labels:
+1. Keep the flat list until a gameplay rule needs distinct hands or equipment.
+2. When a new direct item interaction mutates but does not consume a carried stack, move that stack to most recent.
+3. Add explicit model fields only if needed by mechanics:
+   - `hands`: active held items with different action costs or blocking behavior
+   - `equipped_bag`: worn storage with weight or access rules
+   - `containers`: only if nested storage needs dedicated access, sorting, or ownership rules beyond stack `data`
 
-```text
-Inventory
-Hands
-  1 sharp stone
-Bags
-  none equipped
-Carried
-  2 coconut
-  3 sticks
-```
-
-3. If no hands/bag model exists, infer a simple temporary display:
-   - first/top carried stack can appear under `Hands`, or hands can show `empty` until the model is added.
-   - keep all real data under `Carried` so nothing disappears.
-4. After the UI feels right, add explicit model fields only if needed:
-   - `hands`: maybe 0-2 item stacks
-   - `equipped_bag`: optional placed/equipped item
-   - `containers`: later, for water/food/storage rules
-
-**Do not** build a complete equipment/container system before testing the display.
+**Do not** build a complete hands/equipment system before it changes real gameplay.
 
 **Good first test:**
 
-- Empty carried inventory renders `Hands` and `Bags` sections clearly.
-- Carried items are still visible.
-- Existing Chinese inventory labels still work or are updated intentionally.
+- Empty carried inventory renders clearly.
+- Carried items render newest-first with item stats intact.
+- Carried and placed storage render used/capacity and contents clearly.
+- Existing Chinese item/stat labels still work.
 
 ### 5. Decide public information for other players
 
