@@ -3,6 +3,22 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from .content import (
+    ACTION_BLUEPRINTS,
+    ACTION_DURATIONS,
+    AREA_DEFS,
+    AREA_EXPLORE_AREAS,
+    AREA_EXPLORE_CARDS,
+    AREA_EXPLORE_ITEMS,
+    AREA_NEIGHBORS,
+    DEFAULT_FORAGE_OUTPUTS,
+    DISCOVERY_ORDER,
+    FISH_LOCATIONS,
+    RECIPES,
+    SKILL_BY_ACTION,
+    WATER_LOCATIONS,
+    build_locations,
+)
 from .models import (
     Action,
     BLUEPRINTS,
@@ -20,104 +36,13 @@ from .models import (
     remove_items,
 )
 
-ACTION_DURATIONS = {
-    "drink": 3,
-    "eat": 3,
-    "pick up": 3,
-    "drop": 3,
-    "tend fire": 6,
-    "cook fish": 6,
-    "boil water": 6,
-    "gather": 12,
-    "forage": 12,
-    "move": 12,
-    "wash": 12,
-    "swim": 12,
-    "leisure": 12,
-    "explore": 18,
-    "rest": 18,
-    "treat wound": 18,
-    "craft sharp stone": 24,
-    "start fire": 36,
-    "fish": 36,
-    "build raincatcher": 60,
-    "build shelter": 90,
-}
-
-RECIPES: dict[str, dict[str, int]] = {
-    "craft sharp stone": {"stones": 1},
-    "start fire": {"sticks": 2, "leaves": 1},
-    "tend fire": {"sticks": 1},
-    "build shelter": {"sticks": 4, "leaves": 6, "vine": 2},
-    "build raincatcher": {"sticks": 2, "leaves": 4, "vine": 1},
-    "fish": {"sharp stone": 1},
-    "cook fish": {"raw fish": 1},
-    "boil water": {"unsafe water": 1},
-    "treat wound": {"bandage leaves": 1},
-}
-
-ACTION_BLUEPRINTS = {
-    "craft sharp stone": "sharp stone",
-    "start fire": "fire",
-    "build shelter": "shelter",
-    "build raincatcher": "raincatcher",
-    "cook fish": "cook fish",
-    "boil water": "boil water",
-}
-
-SKILL_BY_ACTION = {
-    "forage": "herbology",
-    "explore": "climbing",
-    "wash": "swimming",
-    "swim": "swimming",
-    "craft sharp stone": "knapping",
-    "start fire": "crafting",
-    "tend fire": "crafting",
-    "build shelter": "woodworking",
-    "build raincatcher": "woodworking",
-    "fish": "fishing",
-    "cook fish": "cooking",
-    "boil water": "cooking",
-}
-
 
 def new_world(seed: int = 1) -> World:
     world = World(seed=seed)
-    world.locations = {
-        "beach": Location(
-            "beach",
-            True,
-            ["sea", "sand", "coconut palms"],
-            [],
-            [],
-            {
-                "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-                "coconut": {
-                    "source": "coconut palms",
-                    "qty": 2,
-                    "capacity": 2,
-                    "regen_minutes": 3 * 1440,
-                    "regen_progress": 0,
-                    "action": "forage",
-                },
-            },
-        ),
-        "jungle outskirts": Location("jungle outskirts", False, ["trees", "vines", "leaf litter"], []),
-        "rocks": Location("rocks", False, ["stone outcrops", "cliffs"], []),
-        "tide pool": Location(
-            "tide pool",
-            False,
-            ["shallow pools", "fish", "unsafe water"],
-            [],
-            [],
-            {
-                "unsafe water": {"source": "shallow pools", "infinite": True, "action": "gather"},
-                "raw fish": {"source": "fish", "infinite": True, "action": "fish"},
-            },
-        ),
-    }
-    add_items(world.locations["beach"].ground, "coconut", 2)
-    add_items(world.locations["beach"].ground, "sticks", 2)
+    world.locations = build_locations()
+    for location_name, data in AREA_DEFS.items():
+        for item, qty in data.get("ground", {}).items():
+            add_items(world.locations[location_name].ground, item, int(qty))
     log_event(world, "Day 1 dawns on the beach.")
     return world
 
@@ -137,10 +62,20 @@ def world_snapshot(world: World, player_name: str) -> dict[str, Any]:
     }
     actions = available_actions(world, player_name)
     player_data["available_actions"] = actions
-    locations = {player.location: current_location.to_dict()}
+    current_location_data = current_location.to_dict()
+    current_location_data["neighbors"] = list(AREA_NEIGHBORS.get(player.location, []))
+    locations = {player.location: current_location_data}
     for name, location in world.locations.items():
         if name != player.location and location.discovered:
-            locations[name] = {"name": name, "discovered": True, "features": [], "ground": [], "placed": [], "resources": {}}
+            locations[name] = {
+                "name": name,
+                "discovered": True,
+                "features": [],
+                "location_cards": [],
+                "ground": [],
+                "placed": [],
+                "resources": {},
+            }
     return {
         "day": world.day,
         "minute": world.minute,
@@ -185,17 +120,22 @@ def has_object(location: Location, kind: str) -> bool:
     return any(p.kind == kind and p.active for p in location.placed)
 
 
+def has_location_card(location: Location, *cards: str) -> bool:
+    return any(card in location.location_cards for card in cards)
+
+
 def available_actions(world: World, player_name: str) -> list[str]:
     player = world.players[player_name]
     loc = world.locations[player.location]
     actions = ["explore", "forage", "gather", "rest", "leisure"]
     actions.extend(["drop"] if player.carried else [])
     actions.extend(["pick up"] if loc.ground else [])
-    actions.extend(["wash", "swim"] if player.location in {"beach", "tide pool"} else [])
+    water_here = player.location in WATER_LOCATIONS or has_location_card(
+        loc, "sea", "seawater", "tide pool", "flooded tide pool"
+    )
+    actions.extend(["wash", "swim"] if water_here else [])
     actions.extend(
-        ["move"]
-        if any(location.discovered and location.name != player.location for location in world.locations.values())
-        else []
+        ["move"] if discovered_neighbor_names(world, player.location) else []
     )
     if count_item(player.carried, "clean water") or count_item(player.carried, "coconut"):
         actions.append("drink")
@@ -206,14 +146,22 @@ def available_actions(world: World, player_name: str) -> list[str]:
     for action, blueprint in ACTION_BLUEPRINTS.items():
         if blueprint in player.known_blueprints:
             actions.append(action)
-    if player.location == "tide pool" and count_item(player.carried, "sharp stone"):
+    fish_here = player.location in FISH_LOCATIONS or has_location_card(loc, "tide pool", "flooded tide pool")
+    if fish_here and count_item(player.carried, "sharp stone"):
         actions.append("fish")
     if active_fire(loc):
         if count_item(player.carried, "sticks"):
             actions.append("tend fire")
     else:
         actions = [action for action in actions if action not in {"cook fish", "boil water"}]
-    return sorted(set(actions))
+    return order_actions_by_recent(actions, player.action_history)
+
+
+def order_actions_by_recent(actions: list[str], action_history: list[str]) -> list[str]:
+    available = list(dict.fromkeys(actions))
+    available_set = set(available)
+    recent = [action for action in dict.fromkeys(action_history) if action in available_set]
+    return recent + [action for action in available if action not in recent]
 
 
 def start_action(world: World, player_name: str, action_name: str, args: dict[str, Any] | None = None) -> None:
@@ -232,14 +180,17 @@ def start_action(world: World, player_name: str, action_name: str, args: dict[st
     loc = world.locations[player.location]
     if action_name == "gather":
         requested = args.get("item")
-        allowed = gather_item_for_location(player.location)
-        if requested is not None and requested != allowed:
+        allowed = gather_items_for_location(loc)
+        if requested is not None and requested not in allowed:
             raise ValueError(f"cannot gather {requested} at {player.location}")
+        args["item"] = str(requested or allowed[0])
     if action_name == "forage" and args.get("item") is not None:
         requested = str(args["item"])
         if requested not in loc.resources:
             raise ValueError(f"cannot forage {requested} at {player.location}")
         resource = loc.resources[requested]
+        if resource.get("action", "forage") != "forage":
+            raise ValueError(f"cannot forage {requested} at {player.location}")
         if not resource.get("infinite"):
             if int(resource.get("qty", 0)) <= 0:
                 raise ValueError(f"{args['item']} is depleted")
@@ -247,8 +198,8 @@ def start_action(world: World, player_name: str, action_name: str, args: dict[st
             args["reserved_resource"] = requested
     if action_name == "move" and "location" in args:
         destination = str(args["location"])
-        if destination not in world.locations or not world.locations[destination].discovered:
-            raise ValueError("destination is not discovered")
+        if destination not in discovered_neighbor_names(world, player.location):
+            raise ValueError("destination is not a discovered neighbor")
     reserved = []
     if action_name in RECIPES:
         for item, qty in RECIPES[action_name].items():
@@ -265,6 +216,7 @@ def start_action(world: World, player_name: str, action_name: str, args: dict[st
         reserved.extend(remove_items(player.carried, item, int(args.get("qty", 1))))
     total = ACTION_DURATIONS[action_name]
     player.current_action = Action(action_name, total, total, args, reserved)
+    player.action_history = [action_name, *[action for action in player.action_history if action != action_name]]
     log_event(world, f"{player.name} started {action_name}.")
 
 
@@ -382,7 +334,7 @@ def complete_action(world: World, player: Player, action: Action) -> None:
     if skill:
         player.skills[skill] = player.skills.get(skill, 0) + 1
     if name == "forage":
-        forage_outputs = ["coconut", "sticks", "leaves", "stones", "vine", "bandage leaves"]
+        forage_outputs = forage_outputs_for_location(loc)
         item = action.args.get("item") or forage_outputs[(world.tick + len(player.name)) % len(forage_outputs)]
         if item == "coconut" and not action.args.get("reserved_resource"):
             resource = loc.resources.get("coconut")
@@ -397,7 +349,7 @@ def complete_action(world: World, player: Player, action: Action) -> None:
             player.conditions["wounds"] = clamp(player.conditions.get("wounds", 0) + 1)
             player.conditions["pain"] = clamp(player.conditions.get("pain", 0) + 5)
     elif name == "gather":
-        item = gather_item_for_location(player.location)
+        item = action.args.get("item") or gather_items_for_location(loc)[0]
         add_items(player.carried, item, 1)
         unlock_from_item(player, item)
     elif name == "explore":
@@ -405,7 +357,7 @@ def complete_action(world: World, player: Player, action: Action) -> None:
     elif name == "move":
         dest = action.args.get("location")
         if not dest:
-            dest = next(location.name for location in world.locations.values() if location.discovered and location.name != player.location)
+            dest = discovered_neighbor_names(world, player.location)[0]
         player.location = dest
     elif name in {"wash", "swim"}:
         player.needs["stress"] = clamp(player.needs["stress"] - 8)
@@ -456,27 +408,123 @@ def complete_action(world: World, player: Player, action: Action) -> None:
     log_event(world, f"{player.name} completed {name}.")
 
 
-def gather_item_for_location(location: str) -> str:
-    return {
-        "beach": "unsafe water",
-        "jungle outskirts": "sticks",
-        "rocks": "stones",
-        "tide pool": "unsafe water",
-    }.get(location, "sticks")
+def gather_items_for_location(location: Location) -> list[str]:
+    outputs = [
+        item
+        for item, resource in location.resources.items()
+        if resource.get("action") == "gather"
+    ]
+    return outputs or ["sticks"]
+
+
+def forage_outputs_for_location(location: Location) -> list[str]:
+    outputs = [
+        item
+        for item, resource in location.resources.items()
+        if resource.get("action", "forage") == "forage" and (resource.get("infinite") or int(resource.get("qty", 0)) > 0)
+    ]
+    return outputs or DEFAULT_FORAGE_OUTPUTS
+
+
+def discovered_neighbor_names(world: World, location_name: str) -> list[str]:
+    return [
+        name
+        for name in AREA_NEIGHBORS.get(location_name, [])
+        if name in world.locations and world.locations[name].discovered
+    ]
 
 
 def discover_next(world: World, player: Player) -> None:
-    order = ["jungle outskirts", "rocks", "tide pool"]
-    for name in order:
+    discovered = discover_area_or_card(world, player)
+    found_item = find_explore_item(world, player)
+    if discovered or found_item:
+        return
+    add_items(player.carried, "stones", 1)
+    log_event(world, f"{player.name} found stones while exploring {player.location}.")
+
+
+def discover_area_or_card(world: World, player: Player) -> bool:
+    current_location = world.locations[player.location]
+    for name in AREA_EXPLORE_AREAS.get(player.location, []):
         loc = world.locations[name]
         if not loc.discovered:
             loc.discovered = True
-            player.known_blueprints.update({"fire"} if name == "jungle outskirts" else set())
-            player.known_blueprints.update({"shelter", "raincatcher"} if name == "rocks" else set())
-            player.known_blueprints.update({"cook fish", "boil water"} if name == "tide pool" else set())
+            player.known_blueprints.update(blueprints_for_area(name))
             log_event(world, f"{player.name} discovered {name}.")
-            return
-    add_items(player.carried, "stones", 1)
+            return True
+    for card in AREA_EXPLORE_CARDS.get(player.location, []):
+        if card not in current_location.location_cards:
+            current_location.location_cards.append(card)
+            log_event(world, f"{player.name} found {card} at {player.location}.")
+            return True
+    for name, blueprints in DISCOVERY_ORDER:
+        loc = world.locations[name]
+        if not loc.discovered:
+            loc.discovered = True
+            player.known_blueprints.update(blueprints)
+            log_event(world, f"{player.name} discovered {name}.")
+            return True
+    return False
+
+
+def find_explore_item(world: World, player: Player) -> bool:
+    loc = world.locations[player.location]
+    rewards = AREA_EXPLORE_ITEMS.get(player.location, [])
+    available_rewards = [reward_parts(reward) for reward in rewards]
+    available_rewards = [
+        reward
+        for reward in available_rewards
+        if reward["limit"] is None or loc.explore_counts.get(str(reward["key"]), 0) < int(reward["limit"])
+    ]
+    if not available_rewards:
+        return False
+    total_weight = sum(int(reward["weight"]) for reward in available_rewards)
+    if total_weight <= 0:
+        return False
+    rng = random.Random(f"{world.seed}:{world.tick}:{world.day}:{world.minute}:{player.name}:{player.location}")
+    roll = rng.randrange(total_weight)
+    upto = 0
+    for reward in available_rewards:
+        upto += int(reward["weight"])
+        if roll < upto:
+            item = str(reward["item"])
+            min_qty = int(reward["min_qty"])
+            max_qty = int(reward["max_qty"])
+            qty = min_qty if min_qty == max_qty else rng.randint(min_qty, max_qty)
+            if reward["limit"] is not None:
+                key = str(reward["key"])
+                loc.explore_counts[key] = loc.explore_counts.get(key, 0) + 1
+            add_items(player.carried, item, qty)
+            unlock_from_item(player, item)
+            log_event(world, f"{player.name} found {qty} {item} while exploring {player.location}.")
+            return True
+    return False
+
+
+def reward_parts(reward) -> dict[str, Any]:
+    if len(reward) == 4:
+        weight, item, min_qty, max_qty = reward
+        return {
+            "key": str(item).replace(" ", "_"),
+            "weight": weight,
+            "item": item,
+            "min_qty": min_qty,
+            "max_qty": max_qty,
+            "limit": None,
+        }
+    key, weight, item, min_qty, max_qty, limit = reward
+    return {
+        "key": key,
+        "weight": weight,
+        "item": item,
+        "min_qty": min_qty,
+        "max_qty": max_qty,
+        "limit": limit,
+    }
+
+
+def blueprints_for_area(name: str) -> set[str]:
+    return next((blueprints for area, blueprints in DISCOVERY_ORDER if area == name), set())
 
 
 def unlock_from_item(player: Player, item: str) -> None:

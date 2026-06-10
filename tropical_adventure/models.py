@@ -65,18 +65,22 @@ class Location:
     name: str
     discovered: bool = False
     features: list[str] = field(default_factory=list)
+    location_cards: list[str] = field(default_factory=list)
     ground: list[ItemStack] = field(default_factory=list)
     placed: list[PlacedObject] = field(default_factory=list)
     resources: dict[str, dict[str, Any]] = field(default_factory=dict)
+    explore_counts: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "discovered": self.discovered,
             "features": list(self.features),
+            "location_cards": list(self.location_cards),
             "ground": [i.to_dict() for i in self.ground],
             "placed": [p.to_dict() for p in self.placed],
             "resources": {name: dict(data) for name, data in self.resources.items()},
+            "explore_counts": dict(self.explore_counts),
         }
 
     @classmethod
@@ -85,9 +89,11 @@ class Location:
             name=data["name"],
             discovered=bool(data.get("discovered", False)),
             features=list(data.get("features", [])),
+            location_cards=list(data.get("location_cards", [])),
             ground=[ItemStack.from_dict(i) for i in data.get("ground", [])],
             placed=[PlacedObject.from_dict(p) for p in data.get("placed", [])],
             resources={name: dict(resource) for name, resource in data.get("resources", {}).items()},
+            explore_counts={str(name): int(count) for name, count in data.get("explore_counts", {}).items()},
         )
 
 
@@ -130,6 +136,7 @@ class Player:
     carried: list[ItemStack] = field(default_factory=list)
     known_blueprints: set[str] = field(default_factory=lambda: set(STARTING_BLUEPRINTS))
     current_action: Action | None = None
+    action_history: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,6 +149,7 @@ class Player:
             "carried": [i.to_dict() for i in self.carried],
             "known_blueprints": sorted(self.known_blueprints),
             "current_action": self.current_action.to_dict() if self.current_action else None,
+            "action_history": list(self.action_history),
         }
 
     @classmethod
@@ -158,6 +166,7 @@ class Player:
         player.known_blueprints = set(data.get("known_blueprints", STARTING_BLUEPRINTS))
         action = data.get("current_action")
         player.current_action = Action.from_dict(action) if action else None
+        player.action_history = [str(action) for action in data.get("action_history", [])]
         return player
 
 

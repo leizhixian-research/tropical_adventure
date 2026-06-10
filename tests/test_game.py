@@ -10,6 +10,15 @@ from tropical_adventure.game import (
     tick_world,
     world_snapshot,
 )
+from tropical_adventure.content import (
+    AREA_DEFS,
+    AREA_EXPLORE_CARDS,
+    AREA_EXPLORE_ITEMS,
+    AREA_LOCATION_CARDS,
+    AREA_NEIGHBORS,
+    DISCOVERY_ORDER,
+    LOCATION_CARD_DEFS,
+)
 from tropical_adventure.models import ItemStack, PlacedObject, add_items, count_item
 from tropical_adventure.persistence import load_world, save_world
 
@@ -64,6 +73,23 @@ def test_actions_consume_inputs_produce_outputs_and_advance_skill():
     assert player.skills["knapping"] == 1
 
 
+def test_available_actions_are_ordered_by_player_recent_use():
+    world = new_world()
+    player = join_player(world, "Alice")
+
+    assert available_actions(world, "Alice")[:5] == ["explore", "forage", "gather", "rest", "leisure"]
+
+    start_action(world, "Alice", "forage")
+    run_minutes(world, 12)
+    assert player.action_history == ["forage"]
+    assert available_actions(world, "Alice")[0] == "forage"
+
+    start_action(world, "Alice", "rest")
+    run_minutes(world, 18)
+    assert player.action_history[:2] == ["rest", "forage"]
+    assert available_actions(world, "Alice")[:2] == ["rest", "forage"]
+
+
 def test_per_player_blueprint_unlocks_are_individual_and_round_trip(tmp_path: Path):
     world = new_world()
     alice = join_player(world, "Alice")
@@ -79,6 +105,8 @@ def test_per_player_blueprint_unlocks_are_individual_and_round_trip(tmp_path: Pa
     loaded = load_world(saved_path)
     assert "fire" in loaded.players["Alice"].known_blueprints
     assert "fire" not in loaded.players["Bob"].known_blueprints
+    assert loaded.players["Alice"].action_history == ["explore"]
+    assert loaded.players["Bob"].action_history == []
     assert loaded.players["Alice"].connected is False
     assert loaded.paused is False
 
@@ -110,6 +138,44 @@ def test_explore_move_wash_swim_leisure_treat_wound_effects():
     start_action(world, "Alice", "move", {"location": "jungle outskirts"})
     run_minutes(world, 12)
     assert player.location == "jungle outskirts"
+
+
+def test_explore_finds_area_items_as_well_as_discoveries():
+    world = new_world()
+    player = join_player(world, "Alice")
+
+    start_action(world, "Alice", "explore")
+    run_minutes(world, 18)
+
+    assert world.locations["jungle outskirts"].discovered is True
+    found_items = {stack.item for stack in player.carried}
+    beach_items = {reward[2] if len(reward) == 6 else reward[1] for reward in AREA_EXPLORE_ITEMS["beach"]}
+    assert found_items & beach_items
+    assert any("found" in event and "while exploring beach" in event for event in world.event_log)
+
+
+def test_explore_limited_rewards_are_counted_and_saved(tmp_path: Path):
+    world = new_world(seed=2)
+    player = join_player(world, "Alice")
+
+    start_action(world, "Alice", "explore")
+    run_minutes(world, 18)
+
+    assert world.locations["beach"].explore_counts["heavy_stone_1_limit"] == 1
+    saved_path = save_world(world, tmp_path / "island.json")
+    loaded = load_world(saved_path)
+    assert loaded.locations["beach"].explore_counts["heavy_stone_1_limit"] == 1
+
+    loaded.players["Alice"].connected = True
+    loaded.players["Alice"].current_action = None
+    for _ in range(12):
+        start_action(loaded, "Alice", "explore")
+        run_minutes(loaded, 18)
+
+    for reward in AREA_EXPLORE_ITEMS["beach"]:
+        if len(reward) == 6:
+            key, _weight, _item, _min_qty, _max_qty, limit = reward
+            assert loaded.locations["beach"].explore_counts.get(key, 0) <= limit
 
 
 def test_action_cancellation_returns_reserved_resources():
@@ -326,6 +392,125 @@ def test_forage_rejects_arbitrary_client_requested_items():
         raise AssertionError("arbitrary forage item was accepted")
 
 
+def test_forage_rejects_items_that_need_a_different_action():
+    world = new_world()
+    player = join_player(world, "Alice")
+    for location in world.locations.values():
+        location.discovered = True
+    player.location = "rocks"
+
+    try:
+        start_action(world, "Alice", "forage", {"item": "raw fish"})
+    except ValueError as exc:
+        assert "cannot forage raw fish" in str(exc)
+    else:
+        raise AssertionError("fish resource was accepted as a forage action")
+
+
+def test_card_survival_content_locations_are_loaded_and_discoverable():
+    world = new_world()
+    player = join_player(world, "Alice")
+
+    wiki_areas = {
+        "acid lake",
+        "atoll",
+        "beach",
+        "bay",
+        "bird rock",
+        "deep jungle",
+        "desolate beach",
+        "eastern grasslands",
+        "eastern highlands",
+        "enclosure",
+        "highland hole",
+        "jungle",
+        "jungle highlands",
+        "jungle outskirts",
+        "mangrove forest",
+        "raft",
+        "rocks",
+        "secret cove",
+        "secret valley",
+        "volcano",
+        "western grasslands",
+        "western highlands",
+        "wetlands",
+        "bat cave",
+        "cellar",
+        "dark cave",
+        "grasslands cave",
+        "macaque den",
+        "mud hut",
+        "plane crash",
+        "sea cave",
+        "shed",
+        "stone hut",
+        "tidal cave",
+        "crystal chamber",
+        "damp chamber",
+        "darkness",
+        "flooded chamber",
+        "high chamber",
+        "medium chamber",
+        "low chamber",
+        "narrow tunnel",
+        "tunnel",
+    }
+    wiki_location_cards = {
+        "bat colony",
+        "brimstone vent",
+        "collapsed tunnel entrance",
+        "copper vein",
+        "debris",
+        "dry acid lake",
+        "dry cave pond",
+        "dry puddle",
+        "flooded tide pool",
+        "hole",
+        "narrow passage",
+        "sand",
+        "seawater",
+        "shaft",
+        "shipwreck",
+        "skeleton",
+        "tide pool",
+        "wall scratchings",
+    }
+
+    assert wiki_areas <= set(world.locations)
+    assert wiki_location_cards <= set(LOCATION_CARD_DEFS)
+    assert not ((wiki_location_cards - wiki_areas) & set(world.locations))
+    assert set(name for name, _blueprints in DISCOVERY_ORDER) <= set(AREA_DEFS)
+    assert {"bay", "jungle outskirts", "rocks"} <= set(AREA_NEIGHBORS["beach"])
+    assert AREA_NEIGHBORS["acid lake"] == ["volcano"]
+    assert "dry acid lake" in world.locations["acid lake"].location_cards
+    assert AREA_EXPLORE_CARDS["acid lake"] == ["brimstone vent"]
+    assert "brimstone vent" not in world.locations["acid lake"].location_cards
+    assert {"sea", "copper vein"} <= set(world.locations["rocks"].location_cards)
+    assert "tide pool" not in world.locations["rocks"].location_cards
+    assert {"copper vein", "skeleton"} <= set(AREA_LOCATION_CARDS["highland hole"])
+    assert "wall scratchings" in AREA_LOCATION_CARDS["sea cave"]
+    assert "tide pool" in AREA_LOCATION_CARDS["tidal cave"]
+    assert "exit" in AREA_LOCATION_CARDS["plane crash"]
+    assert world.locations["beach"].discovered is True
+    assert world.locations["bay"].resources["raw fish"]["action"] == "fish"
+
+    for expected in ["jungle outskirts", "rocks"]:
+        start_action(world, "Alice", "explore")
+        run_minutes(world, 18)
+        assert world.locations[expected].discovered is True
+    player.location = "rocks"
+    start_action(world, "Alice", "explore")
+    run_minutes(world, 18)
+    assert "tide pool" in world.locations["rocks"].location_cards
+    player.location = "acid lake"
+    start_action(world, "Alice", "explore")
+    run_minutes(world, 18)
+    assert "brimstone vent" in world.locations["acid lake"].location_cards
+    assert "fire" in player.known_blueprints
+    assert "shelter" in player.known_blueprints
+
+
 def test_coconuts_are_finite_location_resources_that_regrow_over_time():
     world = new_world()
     player = join_player(world, "Alice")
@@ -367,13 +552,27 @@ def test_infinite_water_source_can_be_gathered_without_depletion():
     assert beach.resources["unsafe water"]["infinite"] is True
 
 
+def test_gather_accepts_any_location_resource_marked_for_gather():
+    world = new_world()
+    player = join_player(world, "Alice")
+    world.locations["secret cove"].discovered = True
+    player.location = "secret cove"
+
+    start_action(world, "Alice", "gather", {"item": "stones"})
+    run_minutes(world, 12)
+
+    assert count_item(player.carried, "stones") == 1
+
+
 def test_fish_and_tend_fire_are_available_when_prerequisites_are_met():
     world = new_world()
     player = join_player(world, "Alice")
     for location in world.locations.values():
         location.discovered = True
-    player.location = "tide pool"
+    player.location = "rocks"
     add_items(player.carried, "sharp stone", 1)
+    start_action(world, "Alice", "explore")
+    run_minutes(world, 18)
 
     assert "fish" in available_actions(world, "Alice")
     start_action(world, "Alice", "fish")
@@ -404,7 +603,7 @@ def test_move_rejects_invalid_destination_before_action_starts():
         try:
             start_action(world, "Alice", "move", {"location": destination})
         except ValueError as exc:
-            assert "destination is not discovered" in str(exc)
+            assert "destination is not a discovered neighbor" in str(exc)
         else:
             raise AssertionError("invalid move destination was accepted")
     assert player.current_action is None

@@ -6,6 +6,7 @@ import contextlib
 import re
 from typing import Any
 
+from .content import LOCATION_CARD_DEFS
 from .game import ACTION_DURATIONS
 from .models import MAX_EVENT_LOG
 from .protocol import read_json_line, write_json_line
@@ -38,7 +39,7 @@ COMMAND_DESCRIPTIONS = {
         "eat": "eat carried food",
         "exit": "save and exit the client",
         "explore": "search the current area for new locations",
-        "fish": "catch fish at the tide pool",
+        "fish": "catch fish in coastal fishing spots",
         "forage": "look for edible or medicinal plants",
         "gather": "collect nearby natural materials",
         "inspect": "request the latest world snapshot",
@@ -67,7 +68,7 @@ COMMAND_DESCRIPTIONS = {
         "eat": "吃掉携带的食物",
         "exit": "保存并退出客户端",
         "explore": "搜索当前区域的新地点",
-        "fish": "在潮池捕鱼",
+        "fish": "在沿海渔点捕鱼",
         "forage": "觅食，寻找可食用或药用植物",
         "gather": "收集附近的自然材料",
         "inspect": "请求最新世界快照",
@@ -90,15 +91,106 @@ OBJECT_NAMES_ZH = {
     "jungle outskirts": "丛林边缘",
     "rocks": "岩石",
     "tide pool": "潮池",
+    "jungle": "丛林",
+    "bay": "海湾",
+    "mangrove forest": "红树林",
+    "wetlands": "湿地",
+    "deep jungle": "丛林深处",
+    "secret cove": "秘密海湾",
+    "acid lake": "酸湖",
+    "atoll": "环礁",
+    "bird rock": "鸟岩",
+    "desolate beach": "荒凉海滩",
+    "eastern grasslands": "东部草原",
+    "western grasslands": "西部草原",
+    "eastern highlands": "东部高地",
+    "western highlands": "西部高地",
+    "jungle highlands": "丛林高地",
+    "secret valley": "秘密山谷",
+    "volcano": "火山",
+    "highland hole": "高地洞口",
+    "enclosure": "围栏",
+    "raft": "木筏",
+    "bat cave": "蝙蝠洞",
+    "cellar": "地窖",
+    "dark cave": "黑暗洞穴",
+    "grasslands cave": "草原洞穴",
+    "macaque den": "猕猴巢穴",
+    "mud hut": "泥屋",
+    "plane crash": "坠机点",
+    "sea cave": "海蚀洞",
+    "shed": "棚屋",
+    "stone hut": "石屋",
+    "tidal cave": "潮汐洞穴",
+    "crystal chamber": "水晶洞室",
+    "damp chamber": "潮湿洞室",
+    "darkness": "黑暗",
+    "flooded chamber": "积水洞室",
+    "high chamber": "高洞室",
+    "medium chamber": "中洞室",
+    "low chamber": "低洞室",
+    "narrow tunnel": "狭窄隧道",
+    "tunnel": "隧道",
+    "bat colony": "蝙蝠群",
+    "brimstone vent": "硫磺喷口",
+    "collapsed tunnel entrance": "坍塌隧道口",
+    "copper vein": "铜矿脉",
+    "debris": "残骸",
+    "dry acid lake": "干涸酸湖",
+    "dry cave pond": "干涸洞池",
+    "dry puddle": "干涸水洼",
+    "flooded tide pool": "涨潮潮池",
+    "hole": "洞口",
+    "narrow passage": "狭窄通道",
+    "seawater": "海水",
+    "shaft": "竖井",
+    "shipwreck": "沉船",
+    "skeleton": "骸骨",
+    "wall scratchings": "墙上刻痕",
     "sea": "海",
     "sand": "沙子",
     "coconut palms": "椰子树",
     "trees": "树木",
+    "dense trees": "密林",
     "vines": "藤蔓",
     "leaf litter": "落叶",
     "stone outcrops": "露岩",
     "cliffs": "悬崖",
     "shallow pools": "浅水池",
+    "mangrove roots": "红树根",
+    "flooded mud": "淹水泥地",
+    "palm fronds": "棕榈叶",
+    "rain puddles": "雨水洼",
+    "sago palms": "西米棕榈",
+    "deep shade": "深荫",
+    "acid shore": "酸湖岸",
+    "seagull nests": "海鸥巢",
+    "grass": "草地",
+    "small trees": "小树",
+    "open sun": "烈日空地",
+    "high cliffs": "高崖",
+    "dry grass": "干草",
+    "wild yams": "野山药",
+    "hot ground": "热地面",
+    "hole": "洞口",
+    "fence": "围栏",
+    "trampled grass": "踩踏草地",
+    "floating debris": "漂浮残骸",
+    "darkness": "黑暗",
+    "bat colony": "蝙蝠群",
+    "storage shelves": "储物架",
+    "cave puddle": "洞穴水洼",
+    "debris": "残骸",
+    "shelter walls": "遮蔽墙",
+    "crystals": "水晶",
+    "shaft": "竖井",
+    "narrow passage": "狭窄通道",
+    "copper vein": "铜矿脉",
+    "dry mud": "干泥",
+    "skeleton": "骸骨",
+    "wall scratchings": "墙上刻痕",
+    "brimstone vent": "硫磺喷口",
+    "seawater": "海水",
     "fish": "鱼",
     "unsafe water": "不安全的水",
     "clean water": "净水",
@@ -117,6 +209,31 @@ OBJECT_NAMES_ZH = {
     "fire": "火堆",
     "shelter": "庇护所",
     "raincatcher": "接雨器",
+    "basket": "篮子",
+    "luggage": "行李",
+    "storage chest": "储物箱",
+    "supply chest": "补给箱",
+    "tent": "帐篷",
+    "trunk": "大箱子",
+    "empty crop plot": "空农田",
+    "banana tree": "香蕉树",
+    "large tree": "大树",
+    "small tree": "小树",
+    "palm bush": "棕榈灌木",
+    "palm tree": "棕榈树",
+    "wild yam": "野山药",
+    "fish trap": "捕鱼陷阱",
+    "snare trap": "套索陷阱",
+    "campfire": "营火",
+    "drying rack": "晾晒架",
+    "leaf bed": "叶床",
+    "mud deposit": "泥土堆",
+    "rain catcher": "接雨器",
+    "salt bed": "盐床",
+    "seagull nest": "海鸥巢",
+    "solar still": "太阳能蒸馏器",
+    "water filter": "滤水器",
+    "well": "井",
 }
 ZH_ALIASES = {value: key for key, value in OBJECT_NAMES_ZH.items()}
 FEATURE_DESCRIPTIONS = {
@@ -125,11 +242,46 @@ FEATURE_DESCRIPTIONS = {
         "sand": "warm pale sand",
         "coconut palms": "shade and coconuts",
         "trees": "dense tropical trees",
+        "dense trees": "thick tropical growth",
         "vines": "long flexible vines",
         "leaf litter": "damp leaves and forest debris",
         "stone outcrops": "hard exposed stone",
         "cliffs": "steep rocky faces",
         "shallow pools": "shallow tidal pools",
+        "mangrove roots": "twisted roots in brackish water",
+        "flooded mud": "wet mud under shallow water",
+        "palm fronds": "broad fronds useful for cover",
+        "rain puddles": "rain-fed puddles of unsafe water",
+        "sago palms": "wetland palms with useful leaves",
+        "deep shade": "cool dim cover under the canopy",
+        "acid shore": "caustic mineral shore",
+        "seagull nests": "noisy nests on exposed rock",
+        "grass": "open tropical grass",
+        "small trees": "thin trees and scrub",
+        "open sun": "exposed heat and glare",
+        "high cliffs": "steep high rock faces",
+        "dry grass": "dry grass and brittle stems",
+        "wild yams": "hidden edible roots",
+        "hot ground": "warm volcanic ground",
+        "hole": "a dark opening downward",
+        "fence": "rough animal fencing",
+        "trampled grass": "flattened grass underfoot",
+        "floating debris": "driftwood and wreckage",
+        "darkness": "lightless interior space",
+        "bat colony": "restless bats overhead",
+        "storage shelves": "old shelves and storage space",
+        "cave puddle": "standing cave water",
+        "debris": "scattered useful debris",
+        "shelter walls": "weather-blocking walls",
+        "crystals": "sharp glittering crystals",
+        "shaft": "vertical cave passage",
+        "narrow passage": "tight rocky passage",
+        "copper vein": "green-streaked ore in stone",
+        "dry mud": "cracked dry mud",
+        "skeleton": "old bones and scraps",
+        "wall scratchings": "marks cut into the wall",
+        "brimstone vent": "sulfurous volcanic vent",
+        "seawater": "salt water filling the passage",
         "fish": "quick flashes under the water",
         "unsafe water": "water that needs treatment",
     },
@@ -138,11 +290,46 @@ FEATURE_DESCRIPTIONS = {
         "sand": "温暖的浅色沙地",
         "coconut palms": "树荫和椰子",
         "trees": "浓密的热带树木",
+        "dense trees": "茂密的热带植被",
         "vines": "又长又韧的藤蔓",
         "leaf litter": "潮湿的落叶和林地碎屑",
         "stone outcrops": "裸露的坚硬岩石",
         "cliffs": "陡峭的岩壁",
         "shallow pools": "浅浅的潮水池",
+        "mangrove roots": "咸淡水中的扭曲树根",
+        "flooded mud": "浅水下的湿泥地",
+        "palm fronds": "可用于遮蔽的大棕榈叶",
+        "rain puddles": "雨水形成的未处理水洼",
+        "sago palms": "湿地里的西米棕榈",
+        "deep shade": "树冠下阴凉昏暗的遮蔽",
+        "acid shore": "带腐蚀性的矿物湖岸",
+        "seagull nests": "裸岩上吵闹的海鸥巢",
+        "grass": "开阔的热带草地",
+        "small trees": "细小树木和灌丛",
+        "open sun": "暴露的热气和眩光",
+        "high cliffs": "高耸陡峭的岩壁",
+        "dry grass": "干草和脆茎",
+        "wild yams": "藏在地下的可食根茎",
+        "hot ground": "温热的火山地面",
+        "hole": "向下的黑暗洞口",
+        "fence": "粗糙的动物围栏",
+        "trampled grass": "被踩平的草地",
+        "floating debris": "漂来的木料和残骸",
+        "darkness": "没有光的内部空间",
+        "bat colony": "头顶躁动的蝙蝠群",
+        "storage shelves": "旧架子和储物空间",
+        "cave puddle": "洞穴里的积水",
+        "debris": "散落的可用残骸",
+        "shelter walls": "能挡住天气的墙",
+        "crystals": "锋利闪光的水晶",
+        "shaft": "垂直洞穴通道",
+        "narrow passage": "狭窄的岩石通道",
+        "copper vein": "岩石中带绿色纹路的矿脉",
+        "dry mud": "龟裂的干泥",
+        "skeleton": "旧骨头和碎物",
+        "wall scratchings": "刻在墙上的痕迹",
+        "brimstone vent": "带硫磺味的火山喷口",
+        "seawater": "灌入通道的咸海水",
         "fish": "水下快速闪动的鱼影",
         "unsafe water": "需要处理的水",
     },
@@ -170,6 +357,19 @@ ITEM_DESCRIPTIONS = {
         "leaves": "broad leaves for crafting",
         "vine": "flexible natural cordage",
         "stones": "hard stones for tools",
+        "wood": "solid fuel and building material",
+        "long stick": "long straight building material",
+        "heavy stone": "large stone that may be useful later",
+        "flint": "sharp stone useful for tools and sparks",
+        "flint slab": "flat flint piece for future crafting",
+        "obsidian": "glassy volcanic stone",
+        "sulphurous stone": "brimstone-rich volcanic stone",
+        "pretty seashells": "small shells good for morale",
+        "guano": "mineral-rich droppings",
+        "bugs": "small edible insects",
+        "crab": "small coastal crab",
+        "prawns": "small shellfish",
+        "assorted mushrooms": "mixed wild mushrooms",
         "sharp stone": "a chipped cutting tool",
         "bandage leaves": "soft medicinal leaves",
         "ash": "powdery fire remains",
@@ -322,6 +522,13 @@ def placed_description(obj: dict[str, Any], lang: str = "en") -> str:
     return base
 
 
+def location_card_description(card: str, lang: str = "en") -> str:
+    description = str(LOCATION_CARD_DEFS.get(card, {}).get("description") or "present in this area")
+    if lang == "zh":
+        return f"{object_name(card, 'zh')}位置卡"
+    return description
+
+
 def item_description(stack: dict[str, Any], lang: str = "en") -> str:
     item = str(stack["item"])
     age = int(stack.get("age_minutes", 0))
@@ -403,11 +610,7 @@ def command_choices(snapshot: dict[str, Any], player_name: str | None = None) ->
 
     for action in available_actions_for_snapshot(snapshot, player_name):
         if action == "move":
-            destinations = [
-                name
-                for name, location in locations.items()
-                if name != current_location and location.get("discovered", True)
-            ]
+            destinations = move_destinations_for_snapshot(snapshot, player_name)
             choices.extend(f"/move {name}" for name in destinations)
             choices.append("/move <location>")
         elif action == "pick up":
@@ -425,18 +628,18 @@ def command_choices(snapshot: dict[str, Any], player_name: str | None = None) ->
             choices.append(f"/{action}")
         else:
             choices.append(f"/{action}")
-    return sorted(set(choices + CLIENT_COMMANDS))
+    return list(dict.fromkeys(choices + CLIENT_COMMANDS))
 
 
 class CommandMenuState:
     def __init__(self, choices: list[str] | None = None):
-        self.choices = sorted(set(choices or []))
+        self.choices = list(dict.fromkeys(choices or []))
         self.matches: list[str] = []
         self.index = 0
         self.query = ""
 
     def set_choices(self, choices: list[str]) -> None:
-        self.choices = sorted(set(choices))
+        self.choices = list(dict.fromkeys(choices))
         self.update(self.query)
 
     def update(self, query: str) -> None:
@@ -546,6 +749,10 @@ def command_to_message(text: str, snapshot: dict[str, Any], player_name: str | N
         return {"type": "start_action", "action": "move", "args": {}}
     if command.startswith("move "):
         destination = canonical_object_name(command.removeprefix("move ").strip())
+        neighbors = move_neighbors_for_snapshot(snapshot, player_name)
+        destinations = move_destinations_for_snapshot(snapshot, player_name)
+        if neighbors is not None and destination not in destinations:
+            return None
         location = snapshot.get("locations", {}).get(destination)
         if location is not None and not location.get("discovered", True):
             return None
@@ -573,6 +780,39 @@ def available_actions_for_snapshot(snapshot: dict[str, Any], player_name: str | 
     if player_name:
         return list(snapshot.get("players", {}).get(player_name, {}).get("available_actions", []))
     return list(snapshot.get("available_actions", []))
+
+
+def move_destinations_for_snapshot(snapshot: dict[str, Any], player_name: str | None = None) -> list[str]:
+    neighbors = move_neighbors_for_snapshot(snapshot, player_name)
+    locations = snapshot.get("locations", {})
+    if neighbors is not None:
+        return [
+            name
+            for name in neighbors
+            if name in locations and locations[name].get("discovered", True)
+        ]
+    current_location = current_location_for_snapshot(snapshot, player_name)
+    return [
+        name
+        for name, location in locations.items()
+        if name != current_location and location.get("discovered", True)
+    ]
+
+
+def move_neighbors_for_snapshot(snapshot: dict[str, Any], player_name: str | None = None) -> list[str] | None:
+    current_location = current_location_for_snapshot(snapshot, player_name)
+    locations = snapshot.get("locations", {})
+    loc = locations.get(current_location, {}) if current_location else {}
+    neighbors = loc.get("neighbors")
+    return neighbors if isinstance(neighbors, list) else None
+
+
+def current_location_for_snapshot(snapshot: dict[str, Any], player_name: str | None = None) -> str:
+    players = snapshot.get("players", {})
+    current_player = players.get(player_name) if player_name else None
+    if current_player is None:
+        current_player = next((p for p in players.values() if p.get("connected")), next(iter(players.values()), {})) if players else {}
+    return str(current_player.get("location") or "")
 
 
 def _stat_danger(name: str, value: int) -> int:
@@ -624,6 +864,9 @@ def format_world_panel(snapshot: dict[str, Any], player_name: str, lang: str = "
             if resource.get("source") == feature
         ]
         scene_lines.append(f"  {object_name(feature, lang)} — {feature_description(feature, resource_notes, lang)}")
+    for card in current_loc.get("location_cards", []):
+        card = str(card)
+        scene_lines.append(f"  {object_name(card, lang)} — {location_card_description(card, lang)}")
     for obj in current_loc["placed"]:
         kind = str(obj["kind"])
         name = object_name(kind, lang)

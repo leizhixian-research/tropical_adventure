@@ -292,6 +292,7 @@ def test_slash_choices_include_available_actions_and_client_commands():
 
     choices = command_choices(snapshot)
 
+    assert choices[:3] == ["/explore", "/craft sharp stone", "/pick up <item>"]
     assert "/explore" in choices
     assert "/craft sharp stone" in choices
     assert "/pick up <item>" in choices
@@ -299,6 +300,16 @@ def test_slash_choices_include_available_actions_and_client_commands():
     assert "/pause" in choices
     assert "/exit" in choices
     assert "/action forage" not in choices
+
+
+def test_slash_menu_preserves_recent_action_order_from_snapshot():
+    snapshot = {"available_actions": ["rest", "forage", "explore"]}
+
+    menu = CommandMenuState(command_choices(snapshot))
+    menu.update("/")
+
+    assert menu.matches[:3] == ["/rest", "/forage", "/explore"]
+    assert menu.selected == "/rest"
 
 
 def test_slash_choices_use_current_player_location_and_inventory():
@@ -486,6 +497,64 @@ def test_world_panel_shows_all_discovered_locations_not_only_current_location():
     assert "path to rocks — discovered route" in panel
 
 
+def test_world_panel_describes_new_card_survival_area_features():
+    snapshot = {
+        "day": 1,
+        "minute": 6 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {"Alice": {"name": "Alice", "location": "volcano"}},
+        "locations": {
+            "volcano": {
+                "features": ["brimstone vent", "stone outcrops", "hot ground"],
+                "resources": {
+                    "ash": {"source": "hot ground", "infinite": True, "action": "forage"},
+                    "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
+                },
+                "ground": [],
+                "placed": [],
+            }
+        },
+    }
+
+    panel = format_world_panel(snapshot, player_name="Alice", lang="en")
+
+    assert "Scene: volcano" in panel
+    assert "brimstone vent" in panel
+    assert "sulfurous volcanic vent" in panel
+    assert "hot ground" in panel
+    assert "ash source: infinite" in panel
+
+
+def test_world_panel_renders_location_cards_inside_area():
+    snapshot = {
+        "day": 1,
+        "minute": 6 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {"Alice": {"name": "Alice", "location": "rocks"}},
+        "locations": {
+            "rocks": {
+                "features": ["stone outcrops"],
+                "location_cards": ["tide pool", "flooded tide pool", "copper vein"],
+                "resources": {},
+                "ground": [],
+                "placed": [],
+            }
+        },
+    }
+
+    panel = format_world_panel(snapshot, player_name="Alice", lang="en")
+
+    assert "Scene: rocks" in panel
+    assert "tide pool" in panel
+    assert "shallow pools with small fish" in panel
+    assert "flooded tide pool" in panel
+    assert "green-streaked ore in stone" in panel
+
+
 def test_full_snapshot_hides_undiscovered_locations_from_scene_and_move_choices():
     snapshot = {
         "day": 1,
@@ -495,7 +564,15 @@ def test_full_snapshot_hides_undiscovered_locations_from_scene_and_move_choices(
         "paused": False,
         "players": {"Alice": {"name": "Alice", "location": "beach", "carried": [], "available_actions": ["move"]}},
         "locations": {
-            "beach": {"name": "beach", "discovered": True, "features": [], "resources": {}, "ground": [], "placed": []},
+            "beach": {
+                "name": "beach",
+                "discovered": True,
+                "features": [],
+                "neighbors": ["jungle outskirts"],
+                "resources": {},
+                "ground": [],
+                "placed": [],
+            },
             "jungle outskirts": {"name": "jungle outskirts", "discovered": True, "features": [], "resources": {}, "ground": [], "placed": []},
             "rocks": {"name": "rocks", "discovered": False, "features": [], "resources": {}, "ground": [], "placed": []},
         },
