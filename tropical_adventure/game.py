@@ -124,6 +124,7 @@ def new_world(seed: int = 1) -> World:
             add_items(world.locations[location_name].ground, item, int(qty))
     update_tides(world)
     log_event(world, "Day 1 dawns on the beach.")
+    log_event(world, "Tip: pick up a coconut and drink it for quick water; gather unsafe water and boil it for safer water.")
     return world
 
 

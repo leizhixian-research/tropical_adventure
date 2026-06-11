@@ -210,15 +210,13 @@ Sand uses concrete wiki-style beach actions: `/collect sand` by hand, `/dig up s
 
 The raft is built on the beach in five 90-minute stages, using the full component set of logs, rope, long sticks, leather, fiber cord, axe wear, and needle wear. Fresh skin from snares can be scraped into fleshed skin, then cured into leather over 4 in-game days. Heavy stage materials can be staged on the beach or in placed storage; an unfinished raft frame remains visible with its current stage and next required components.
 
-The world panel keeps the outcome paths visible: escape by finishing the raft on the beach, boarding it, sailing toward rescue, and signaling passing ships; lose if health reaches `$0$` from thirst, hunger, infection, disease, or other damage.
-
-The world panel also names a few blocked survival/escape goals, such as missing raft components, fire, light, shelter, traps, or key tools, without listing every unavailable action.
+The world panel focuses on current scene state, time, weather, sleep status, visible items, and exits. Use `/recipes` or `/crafts` when you want available crafts and missing recipe requirements.
 
 When players rest, the world panel shows whether time is skipping for everyone or which connected living players are still active. Time only fast-forwards when every connected living player is resting; `/pause` and `/resume` remain global.
 
 Weather now uses Card Survival-inspired clear, cloudy, rain, heavy rain, and storm states with rain counter, rain value, and sun strength shown in the world panel. The rain counter runs on the wiki-style `0..700` pressure scale: wet season raises it, dry season lowers it, rain and storms spend it down, and higher counter values bias future weather toward rain. Unsheltered storms build wetness, cold, stress, bruising, and fatigue faster, can damage exposed shelters, raincatchers, traps, solar stills, and drying racks, while exposed midday sun adds thirst and heat load; severe heat or cold can drain health.
 
-Inventory and scene item lines show item state where it matters, including food freshness, leaf drying, exposed-water evaporation, tool durability, lit-tinder and torch fuel, kiln fuel/heat, vessel liquid/capacity, and container slots/storage capacity. Placed storage also lists its contents with `/retrieve <item> <storage>.<slot>` indexes.
+Inventory uses a compact table: index, item, a condition bar when freshness/durability/fuel/liquid/storage matters, and a load number. Scene item lines keep richer descriptions for inspection. Command suggestions use indexes such as `/pick up 2(coconut) 1`, `/drop 1(stones) 1`, and `/retrieve 2.1(rope) 1`; typing only `/` shows action names first, then typing an action plus a space reveals targets.
 
 Containers use concrete storage rules. A new survivor has 4 top-level hand/arm carry slots, adapted from the wiki's hand-row rule, plus one back slot for a backpack. Matching stackable loose items merge in one hand slot; baskets are hand-carried containers that can also be placed as storage, and one woven backpack can be worn on the back. Containers cannot be nested inside other containers, and extra backpacks cannot be held in hand in this direct-action model. Baskets, woven backpacks, chests, and storage-capable shelters hold contents up to their slot and stored-weight limits. Carried containers reduce effective load, and severe overburden blocks travel/work actions while still allowing inventory management.
 

@@ -13,6 +13,7 @@ from tropical_adventure.game import (
     tick_world,
     tick_world_with_sleep_skip,
     update_tides,
+    update_location_resources,
     update_player_needs,
     weather_duration_minutes,
     weather_rain_value,
@@ -1425,7 +1426,7 @@ def test_palm_and_tide_pool_have_concrete_actions_instead_of_drag_interactions()
     run_minutes(world, 30)
 
     assert count_item(player.carried, "coconut") == 1
-    assert beach.resources["coconut palm"]["qty"] == 1
+    assert beach.resources["coconut palm"]["qty"] == 3
     assert player.skills["climbing"] == 1
 
     player.location = "rocks"
@@ -1879,18 +1880,7 @@ def test_tree_coconuts_require_climbing_and_regrow_over_time():
 
     assert beach.resources["coconut palm"]["action"] == "harvest coconuts"
     assert beach.resources["coconut palm"]["action"] != "gather"
-    assert beach.resources["coconut palm"]["qty"] == 2
-    start_action(world, "Alice", "harvest coconuts")
-    run_minutes(world, 30)
-    assert count_item(player.carried, "coconut") == 1
-    assert beach.resources["coconut palm"]["qty"] == 1
-
-    start_action(world, "Alice", "harvest coconuts")
-    run_minutes(world, 30)
-    assert count_item(player.carried, "coconut") == 2
-    assert beach.resources["coconut palm"]["qty"] == 0
-    assert "harvest coconuts" not in available_actions(world, "Alice")
-
+    assert beach.resources["coconut palm"]["qty"] == 4
     try:
         start_action(world, "Alice", "gather", {"item": "coconut palm"})
     except ValueError as exc:
@@ -1898,7 +1888,15 @@ def test_tree_coconuts_require_climbing_and_regrow_over_time():
     else:
         raise AssertionError("tree coconuts could still be gathered directly")
 
-    run_minutes(world, 3 * 1440)
+    for expected in range(1, 5):
+        start_action(world, "Alice", "harvest coconuts")
+        run_minutes(world, 30)
+        assert count_item(player.carried, "coconut") == expected
+        assert beach.resources["coconut palm"]["qty"] == 4 - expected
+    assert beach.resources["coconut palm"]["qty"] == 0
+    assert "harvest coconuts" not in available_actions(world, "Alice")
+
+    update_location_resources(world, 30 * 1440)
     assert beach.resources["coconut palm"]["qty"] == 1
 
 

@@ -9,6 +9,7 @@ from tropical_adventure.client import (
     action_feedback_event,
     format_inventory_panel,
     format_players_panel,
+    format_recipes_panel,
     format_world_panel,
     should_focus_command_input,
     ui_text,
@@ -139,7 +140,7 @@ def test_outcomes_and_player_status_render_in_english_and_chinese():
     )
 
 
-def test_world_panel_shows_clear_win_and_loss_paths_before_outcome():
+def test_world_panel_omits_global_win_loss_hints_before_outcome():
     snapshot = {
         "day": 1,
         "minute": 6 * 60,
@@ -178,10 +179,10 @@ def test_world_panel_shows_clear_win_and_loss_paths_before_outcome():
     world_en = format_world_panel(snapshot, "Alice", "en")
     world_zh = format_world_panel(snapshot, "Alice", "zh")
 
-    assert f"Escape: build the raft, sail to rescue, or signal passing ships 0/{RAFT_RESCUE_DISTANCE}" in world_en
-    assert "Death: life at 0 ends the run; thirst, hunger, infection, and disease can drain it" in world_en
-    assert f"逃离：建造木筏并航行至获救，或向过往船只示意 0/{RAFT_RESCUE_DISTANCE}" in world_zh
-    assert "死亡：生命降到 0 会失败；口渴、饥饿、感染和疾病都会消耗生命" in world_zh
+    assert "Escape:" not in world_en
+    assert "Death:" not in world_en
+    assert "逃离：" not in world_zh
+    assert "死亡：" not in world_zh
 
 
 def test_world_panel_renders_sleep_and_blocked_action_hints_in_both_languages():
@@ -228,11 +229,15 @@ def test_world_panel_renders_sleep_and_blocked_action_hints_in_both_languages():
 
     world_en = format_world_panel(snapshot, "Alice", "en")
     world_zh = format_world_panel(snapshot, "Alice", "zh")
+    recipes_en = format_recipes_panel(snapshot, "en")
+    recipes_zh = format_recipes_panel(snapshot, "zh")
 
     assert "Rest: waiting for Bob; time stays normal" in world_en
-    assert "Blocked: build raft needs 4 log, stone axe, usable light" in world_en
+    assert "Blocked:" not in world_en
+    assert "build raft — 4 log, stone axe, usable light" in recipes_en
     assert "休息：等待 Bob 休息；时间保持正常速度" in world_zh
-    assert "暂不可用：建造木筏需要 4 原木, 石斧, 可用光线" in world_zh
+    assert "暂不可用：" not in world_zh
+    assert "建造木筏 — 4 原木, 石斧, 可用光线" in recipes_zh
 
     snapshot["sleep"] = {"all_resting": True, "resting": ["Alice", "Bob"], "waiting_for": []}
     world_en = format_world_panel(snapshot, "Alice", "en")
@@ -273,9 +278,9 @@ def test_world_panel_shows_unfinished_raft_status_and_next_components():
     world_en = format_world_panel(snapshot, "Alice", "en")
     world_zh = format_world_panel(snapshot, "Alice", "zh")
 
-    assert "Raft build: stage 2/5  40 ████░░░░░░" in world_en
+    assert "Raft build:" not in world_en
     assert "raft frame — unfinished escape raft frame; stage 2/5  40 ████░░░░░░; next: 3 log, 7 rope, 2 long stick" in world_en
-    assert "木筏建造：阶段 2/5  40 ████░░░░░░" in world_zh
+    assert "木筏建造：" not in world_zh
     assert "木筏框架 — 尚未完成的逃生木筏框架；阶段 2/5  40 ████░░░░░░；下一步：3 原木, 7 绳子, 2 长树枝" in world_zh
 
     snapshot["locations"]["beach"]["placed"][0]["data"] = {"stage": 3, "stages": 5}
@@ -294,7 +299,23 @@ def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
         "weather": "rain",
         "light": "daylight",
         "paused": False,
-        "players": {"Alice": {"name": "Alice", "location": "beach", "carried": [{"item": "coconut", "qty": 2}, {"item": "stones", "qty": 1}]}},
+        "players": {
+            "Alice": {
+                "name": "Alice",
+                "location": "beach",
+                "carried": [{"item": "coconut", "qty": 2}, {"item": "stones", "qty": 1}],
+                "carrying": {
+                    "effective_weight": 700,
+                    "capacity": 2500,
+                    "burden": 28,
+                    "relief": 0,
+                    "loose_slots": 2,
+                    "loose_slot_capacity": 4,
+                    "back_slots": 0,
+                    "back_slot_capacity": 1,
+                },
+            }
+        },
         "locations": {
             "beach": {
                 "features": ["sea", "sand", "coconut palms"],
@@ -323,11 +344,14 @@ def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
 
     assert "Global" in panel
     assert "Day 2 09:30" in panel
-    assert "weather: rain light: daylight paused: False" in panel
+    assert "weather: rain; light: daylight; tide: low" in panel
+    assert "paused: False" in panel
     assert "Scene: beach" in panel
-    assert "sea — open salt water; unsafe water source: infinite" in panel
+    assert "sea — open salt water" in panel
+    assert "unsafe water source: infinite" not in panel
     assert "sand — warm pale sand" in panel
-    assert "coconut palms — shade and coconuts; coconut palm: 2/2 available; regrows every 3 days" in panel
+    assert "coconut palms — shade and coconuts; palms 2/2" in panel
+    assert "regrows every" not in panel
     assert "sand castle — a fragile little monument" in panel
     assert "fire(fuel 4) — active fire with fuel 4" in panel
     assert "1 raw fish — half fresh; spoils in 6h; freshness  50 █████░░░░░" in panel
@@ -347,8 +371,11 @@ def test_world_panel_describes_scene_objects_without_duplicate_action_hints():
     inventory = format_inventory_panel(snapshot, player_name="Alice", lang="en")
     assert inventory.splitlines() == [
         "Inventory",
-        "  [1] 1 stones — hard stones for tools; hand slot +1; load +100",
-        "  [2] 2 coconut — fresh food and drink; hand slot +1; load +600",
+        "  Load 700/2500  28 ██░░░░░░░░",
+        "  Slots: hands 2/4, back 0/1",
+        "  Index  Item                   Bar        Load",
+        "  [1] 1 stones                          100",
+        "  [2] 2 coconut                         600",
     ]
 
 
@@ -379,9 +406,13 @@ def test_world_panel_localizes_weather_season_tide_and_storm_integrity():
     panel_en = format_world_panel(snapshot, player_name="Alice", lang="en")
     panel_zh = format_world_panel(snapshot, player_name="Alice", lang="zh")
 
-    assert "weather: heavy rain light: daylight paused: False season: wet rain counter: 612/700 rain: 5/5 sun: 0/6 tide: high" in panel_en
+    assert "weather: heavy rain; light: daylight; tide: high" in panel_en
+    assert "season: wet; rain counter: 612/700; rain: 5/5; sun: 0/6" in panel_en
+    assert "paused: False" in panel_en
     assert "raincatcher — collects rain into clean water; storm integrity  75" in panel_en
-    assert "天气: 大雨 光线: 日光 暂停: False 季节: 雨季 雨势计数: 612/700 雨量: 5/5 日照: 0/6 潮汐: 涨潮" in panel_zh
+    assert "天气: 大雨; 光线: 日光; 潮汐: 涨潮" in panel_zh
+    assert "季节: 雨季; 雨势计数: 612/700; 雨量: 5/5; 日照: 0/6" in panel_zh
+    assert "暂停: False" in panel_zh
     assert "接雨器 — 把雨水收集成净水；风暴完整度  75" in panel_zh
 
 
@@ -488,6 +519,13 @@ def test_format_event_log_localizes_common_game_events_to_chinese():
     assert format_event_log(["Storm damaged raincatcher at beach."], lang="zh") == "风暴损坏了海滩的接雨器。"
     assert format_event_log(["A raincatcher at beach was wrecked by the storm."], lang="zh") == "海滩的接雨器被风暴毁坏了。"
     assert format_event_log(["Day 1 dawns on the beach."], lang="zh") == "第 1 天在海滩破晓。"
+    assert (
+        format_event_log(
+            ["Tip: pick up a coconut and drink it for quick water; gather unsafe water and boil it for safer water."],
+            lang="zh",
+        )
+        == "提示：捡起椰子后可以饮用；也可以收集不安全的水并煮成净水。"
+    )
     assert format_event_log(["Alice reconnected."], lang="zh") == "Alice 重新连接了。"
     assert format_event_log(["Alice cancelled gather."], lang="zh") == "Alice 取消了收集。"
     assert format_event_log(["Alice found nothing while walking beach."], lang="zh") == "Alice 在散步海滩时什么也没找到。"
@@ -510,6 +548,11 @@ def test_format_event_log_localizes_server_and_exploration_events_to_chinese():
         "manual save complete",
         "save already in progress",
         "server disconnected",
+        "Alice paused the world.",
+        "world paused",
+        "Alice resumed the world.",
+        "world resumed",
+        "Alice cancelled action.",
     ]
 
     rendered = format_event_log(events, lang="zh")
@@ -521,6 +564,11 @@ def test_format_event_log_localizes_server_and_exploration_events_to_chinese():
     assert "manual save complete" not in rendered
     assert "save already in progress" not in rendered
     assert "server disconnected" not in rendered
+    assert "paused the world" not in rendered
+    assert "world paused" not in rendered
+    assert "resumed the world" not in rendered
+    assert "world resumed" not in rendered
+    assert "cancelled action" not in rendered
 
 
 def test_chinese_world_panel_localizes_objects_and_command_object_aliases_are_accepted():
@@ -717,15 +765,43 @@ def test_slash_choices_include_available_actions_and_client_commands():
 
     choices = command_choices(snapshot)
 
-    assert choices[:3] == ["/explore", "/craft sharp stone", "/pick up <item>"]
+    assert choices[:3] == ["/explore", "/craft sharp stone", "/pick up"]
     assert "/explore" in choices
     assert "/craft sharp stone" in choices
-    assert "/pick up <item>" in choices
+    assert "/pick up" in choices
     assert "/inspect" not in choices
+    assert "/crafts" in choices
     assert "/pause" in choices
+    assert "/recipes" in choices
     assert "/exit" in choices
     assert "/action forage" not in choices
     assert command_to_message("/inspect", snapshot) is None
+    assert command_to_message("/recipes", snapshot) is None
+
+
+def test_recipes_panel_lists_available_and_missing_recipe_requirements():
+    snapshot = {
+        "available_actions": ["explore", "craft sharp stone", "build raft"],
+        "blocked_actions": [
+            {
+                "action": "build raft",
+                "missing": [
+                    {"kind": "item", "item": "log", "qty": 4},
+                    {"kind": "tool", "item": "stone axe"},
+                ],
+            }
+        ],
+    }
+
+    panel_en = format_recipes_panel(snapshot, "en")
+    panel_zh = format_recipes_panel(snapshot, "zh")
+
+    assert "Recipes" in panel_en
+    assert "craft sharp stone — 1 stones" in panel_en
+    assert "build raft — 4 log, stone axe" in panel_en
+    assert "配方" in panel_zh
+    assert "制作锋利石片 — 1 石头" in panel_zh
+    assert "建造木筏 — 4 原木, 石斧" in panel_zh
 
 
 def test_slash_menu_preserves_recent_action_order_from_snapshot():
@@ -759,11 +835,11 @@ def test_slash_choices_use_current_player_location_and_inventory():
 
     choices = command_choices(snapshot, player_name="Bob")
 
-    assert "/drop stones" in choices
-    assert "/pick up stones" in choices
-    assert "/move beach" in choices
-    assert "/drop coconut" not in choices
-    assert "/pick up coconut" not in choices
+    assert "/drop 1(stones) 1" in choices
+    assert "/pick up 1(stones) 1" in choices
+    assert "/move 1(beach)" in choices
+    assert "/drop 1(coconut) 1" not in choices
+    assert "/pick up 1(coconut) 1" not in choices
 
 
 def test_scene_items_show_indexes_and_pickup_commands_use_them():
@@ -806,15 +882,21 @@ def test_scene_items_show_indexes_and_pickup_commands_use_them():
     assert "  [3] 1 raw fish" in panel
     assert "  [4] 1 coconut" in panel
     assert "/pick up fire 1" not in choices
-    assert "/pick up basket 2" in choices
-    assert "/pick up raw fish 3" in choices
-    assert "/pick up coconut 4" in choices
-    assert command_to_message("/pick up raw fish 3", snapshot, "Alice") == {
+    assert "/pick up 2(basket) 1" in choices
+    assert "/pick up 3(raw fish) 1" in choices
+    assert "/pick up 4(coconut) 1" in choices
+    menu = CommandMenuState(choices)
+    menu.update("/")
+    assert "/pick up" in menu.matches
+    assert "/pick up 3(raw fish) 1" not in menu.matches
+    menu.update("/pick up ")
+    assert "/pick up 3(raw fish) 1" in menu.matches
+    assert command_to_message("/pick up 3(raw fish) 1", snapshot, "Alice") == {
         "type": "start_action",
         "action": "pick up",
-        "args": {"ground_index": 1, "item": "raw fish"},
+        "args": {"ground_index": 1, "item": "raw fish", "qty": 1},
     }
-    assert command_to_message("/pick up basket 2", snapshot, "Alice") == {
+    assert command_to_message("/pick up 2(basket) 1", snapshot, "Alice") == {
         "type": "start_action",
         "action": "pick up",
         "args": {"placed_index": 1, "item": "basket"},
@@ -858,26 +940,30 @@ def test_hand_drill_tinder_commands_and_item_stats_render():
     menu.update("/light tinder")
     inventory = format_inventory_panel(snapshot, "Alice", "zh")
 
-    assert "/light tinder with hand drill dry leaves" in choices
-    assert "/light tinder with hand drill wood shavings" in choices
-    assert "/light tinder with hand drill leaves" not in choices
-    assert "/light tinder with bow drill wood shavings" in choices
-    assert "/light tinder from fire dry leaves" in choices
-    assert "/light tinder with mirror dry leaves" in choices
-    assert "/light tinder with hand drill wood shavings (用手钻点火绒 木屑)" in menu.render(lang="zh")
-    assert "/light tinder from fire dry leaves (从火堆点火绒 干叶)" in menu.render(lang="zh")
-    assert "/light tinder with mirror dry leaves (用信号镜点火绒 干叶)" in menu.render(lang="zh")
+    assert "/light tinder with hand drill 3(dry leaves) 1" in choices
+    assert "/light tinder with hand drill 2(wood shavings) 1" in choices
+    assert "/light tinder with hand drill 3(leaves) 1" not in choices
+    assert "/light tinder with bow drill 2(wood shavings) 1" in choices
+    assert "/light tinder from fire 3(dry leaves) 1" in choices
+    assert "/light tinder with mirror 3(dry leaves) 1" in choices
+    menu.update("/light tinder with hand drill ")
+    assert "/light tinder with hand drill 2(wood shavings) 1 (用手钻点火绒 木屑 2)" in menu.render(lang="zh")
+    menu.update("/light tinder from fire ")
+    assert "/light tinder from fire 3(dry leaves) 1 (从火堆点火绒 干叶 3)" in menu.render(lang="zh")
+    menu.update("/light tinder with mirror ")
+    assert "/light tinder with mirror 3(dry leaves) 1 (用信号镜点火绒 干叶 3)" in menu.render(lang="zh")
     assert "弓钻" in inventory
     assert "手钻" in inventory
     assert "干叶" in inventory
-    assert "干燥" in inventory
-    assert "变成干叶" in inventory
-    assert "耐久" in inventory
     assert "点燃的火绒" in inventory
-    assert "燃料" in inventory
-    assert "余火" in inventory
-    assert "熄灭" in inventory
+    assert "██████████" in inventory
+    assert "█████████░" in inventory
     assert command_to_message("/light tinder with hand drill 木屑", snapshot, "Alice") == {
+        "type": "start_action",
+        "action": "light tinder with hand drill",
+        "args": {"item": "wood shavings"},
+    }
+    assert command_to_message("/light tinder with hand drill 2(wood shavings) 1", snapshot, "Alice") == {
         "type": "start_action",
         "action": "light tinder with hand drill",
         "args": {"item": "wood shavings"},
@@ -951,9 +1037,7 @@ def test_torch_commands_item_stats_and_chinese_light_render():
     }
     assert "火把" in inventory
     assert "点燃的火把" in inventory
-    assert "燃料" in inventory
-    assert "火焰" in inventory
-    assert "熄灭" in inventory
+    assert "███████░░░" in inventory
     assert "光线: 火把光" in world
 
 
@@ -1019,10 +1103,10 @@ def test_slash_menu_filters_and_completes_placeholders():
     menu = CommandMenuState(["/move <location>", "/pause", "/pick up <item>"])
 
     menu.update("/p")
-    assert menu.matches == ["/pause", "/pick up <item>"]
+    assert menu.matches == ["/pause", "/pick up"]
     assert menu.selected == "/pause"
     menu.move_down()
-    assert menu.selected == "/pick up <item>"
+    assert menu.selected == "/pick up"
     assert menu.completion_value() == "/pick up "
 
 
@@ -1043,25 +1127,26 @@ def test_slash_menu_renders_descriptions_for_each_command():
 
     assert "/explore" in rendered
     assert "search the current area" in rendered
-    assert "/move <location>" in rendered
+    assert "/move" in rendered
     assert "travel to a discovered location" in rendered
     assert "/save" in rendered
     assert "save the world" in rendered
 
 
 def test_slash_menu_renders_chinese_action_descriptions():
-    menu = CommandMenuState(["/explore", "/move beach", "/move <location>", "/save"])
+    menu = CommandMenuState(["/explore", "/move 1(beach)", "/move <location>", "/save"])
     menu.update("/")
     rendered = menu.render(lang="zh")
 
     assert "/explore" in rendered
     assert "/explore (探索)" in rendered
     assert "搜索当前区域的新地点" in rendered
-    assert "/move beach (移动 海滩)" in rendered
-    assert "/move <location>" in rendered
+    assert "/move (移动)" in rendered
     assert "前往已发现地点" in rendered
     assert "/save" in rendered
     assert "保存世界" in rendered
+    menu.update("/move ")
+    assert "/move 1(beach) (移动 海滩 1)" in menu.render(lang="zh")
 
 
 def test_tab_selects_autocompleted_command_but_enter_never_autocompletes():
@@ -1142,7 +1227,7 @@ def test_world_panel_describes_new_card_survival_area_features():
     assert "brimstone vent" in panel
     assert "sulfurous volcanic vent" in panel
     assert "hot ground" in panel
-    assert "ash source: infinite" in panel
+    assert "ash source: infinite" not in panel
 
 
 def test_world_panel_renders_location_cards_inside_area():
@@ -1179,6 +1264,32 @@ def test_world_panel_renders_location_cards_inside_area():
     assert "green-streaked ore in stone" in panel
 
 
+def test_world_panel_skips_location_cards_already_shown_as_features():
+    snapshot = {
+        "day": 1,
+        "minute": 6 * 60,
+        "weather": "clear",
+        "light": "daylight",
+        "paused": False,
+        "players": {"Alice": {"name": "Alice", "location": "beach"}},
+        "locations": {
+            "beach": {
+                "features": ["sea", "sand"],
+                "location_cards": ["sea", "sand", "palm tree"],
+                "resources": {},
+                "ground": [],
+                "placed": [],
+            }
+        },
+    }
+
+    panel = format_world_panel(snapshot, player_name="Alice", lang="en")
+
+    assert panel.count("sea —") == 1
+    assert panel.count("sand —") == 1
+    assert "palm tree — a tall palm tree" in panel
+
+
 def test_full_snapshot_hides_undiscovered_locations_from_scene_and_move_choices():
     snapshot = {
         "day": 1,
@@ -1207,9 +1318,9 @@ def test_full_snapshot_hides_undiscovered_locations_from_scene_and_move_choices(
 
     assert "path to jungle outskirts — discovered route" in panel
     assert "path to rocks" not in panel
-    assert "/move jungle outskirts" in choices
+    assert "/move 1(jungle outskirts)" in choices
     assert "/move rocks" not in choices
-    assert "/move <location>" in choices
+    assert "/move" in choices
     assert command_to_message("/move rocks", snapshot, "Alice") is None
     assert command_to_message("/move jungle outskirts", snapshot, "Alice") == {
         "type": "start_action",
@@ -1367,7 +1478,7 @@ def test_new_card_survival_content_renders_with_chinese_support():
     process_log = format_event_log(["drying at beach produced dried fish."], lang="zh")
 
     assert "潮池" in panel
-    assert "芦荟：1/1 可用" in panel
+    assert "芦荟 1/1" in panel
     assert "晾晒架" in panel
     assert "捕鱼陷阱" in panel
     assert "120/1500" in panel
@@ -1441,7 +1552,7 @@ def test_sago_content_renders_as_direct_scene_actions_with_chinese_support():
     rendered_menu = menu.render(lang="zh")
 
     assert "西米棕榈" in panel
-    assert "西米棕榈：2/2 可用" in panel
+    assert "西米棕榈 2/2" in panel
     assert "西米木屑" in panel
     assert "湿西米" in panel
     assert "西米浆" in panel
@@ -1577,7 +1688,7 @@ def test_mud_salt_and_item_stats_render_with_chinese_support():
 
     assert "泥土堆位置卡" in panel
     assert "盐床位置卡" in panel
-    assert "泥土堆：2/3 可用" in panel
+    assert "泥土堆 2/3" in panel
     assert "盐水  50 █████░░░░░" in panel
     assert "盐   5" in panel
     assert "蓄水池" in panel
@@ -1592,10 +1703,8 @@ def test_mud_salt_and_item_stats_render_with_chinese_support():
     assert "温度  66 ██████░░░░" in panel
     assert "泥堆" in panel
     assert "新鲜度" in panel
-    assert "耐久  50 █████░░░░░" in inventory
-    assert "容量 150" in inventory
-    assert "密封" in inventory
-    assert "净水 50/150" in inventory
+    assert "█████░░░░░" in inventory
+    assert "███░░░░░░░" in inventory
     assert "椰子鱼" in inventory
     assert "泥砖" in inventory
     assert "黏土" in inventory
@@ -1753,34 +1862,40 @@ def test_storage_items_and_shelters_render_stats_in_english_and_chinese():
     assert "[1] 1 sticks" in inventory_en
     assert "[3] 1 basket" in inventory_en
     assert "[3.1] 2 stones" in inventory_en
-    assert "hand slot +1; load +50" in inventory_en
-    assert "back slot +1; load +250 (weight 500, relief 250)" in inventory_en
-    assert "hand slot +1; load +500 (weight 700, relief 200)" in inventory_en
+    assert "[1] 1 sticks                          50" in inventory_en
+    assert "250/500" in inventory_en
+    assert "500/700" in inventory_en
     assert "负重 800/2500" in inventory_zh
-    assert "手持格 3/4" in inventory_zh
+    assert "手持 3/4" in inventory_zh
     assert "背部 1/1" in inventory_zh
     assert "[1] 1 树枝" in inventory_zh
     assert "[3] 1 篮子" in inventory_zh
     assert "[3.1] 2 石头" in inventory_zh
     assert "篮子" in inventory_zh
-    assert "储量 200/1000" in inventory_zh
-    assert "储量 200/1000  20 ██░░░░░░░░" in inventory_zh
-    assert "格数 1/4" in inventory_zh
-    assert "格数 1/4  25 ██░░░░░░░░" in inventory_zh
-    assert "手持格 +1；负重 +50" in inventory_zh
-    assert "背部 +1；负重 +250（重量 500，减重 250）" in inventory_zh
-    assert "手持格 +1；负重 +500（重量 700，减重 200）" in inventory_zh
+    assert "██░░░░░░░░" in inventory_zh
+    assert "50" in inventory_zh
+    assert "250/500" in inventory_zh
+    assert "500/700" in inventory_zh
     assert "2 石头" in inventory_zh
-    assert "装备减重 250" in inventory_zh
     assert "/pick up storage chest" not in choices
-    assert "/pack sticks 1" in rendered_menu
-    assert "/unpack stones 3.1" in rendered_menu
-    assert "/store sticks 1" in rendered_menu
-    assert "/retrieve rope 2.1" in rendered_menu
-    assert "/place basket 3" in rendered_menu
+    assert "/pack" in rendered_menu
+    assert "/unpack" in rendered_menu
+    assert "/store" in rendered_menu
+    assert "/retrieve" in rendered_menu
+    assert "/place basket" in rendered_menu
     assert "/take off backpack" in rendered_menu
     assert "/build shed" in rendered_menu
     assert "建造可遮风雨和储物的棚屋" in rendered_menu
+    menu.update("/pack ")
+    assert "/pack 1(sticks) 1" in menu.render(lang="zh")
+    menu.update("/unpack ")
+    assert "/unpack 3.1(stones) 1" in menu.render(lang="zh")
+    menu.update("/store ")
+    assert "/store 1(sticks) 1" in menu.render(lang="zh")
+    menu.update("/retrieve ")
+    assert "/retrieve 2.1(rope) 1" in menu.render(lang="zh")
+    menu.update("/place basket ")
+    assert "/place basket 3(basket) 1" in menu.render(lang="zh")
     assert command_to_message("/pack 树枝", snapshot, "Alice") == {
         "type": "start_action",
         "action": "pack",
@@ -1866,7 +1981,7 @@ def test_scene_storage_contents_show_retrieve_indexes_and_dynamic_state():
     assert "slots 1/2  50 █████░░░░░" in world_en
     assert "    [2.1] 1 raw fish — half fresh; spoils in 6h; freshness  50 █████░░░░░" in world_en
     assert "    [2.1] 1 生鱼 — 半新鲜；6 小时后腐坏；新鲜度  50 █████░░░░░" in world_zh
-    assert "/retrieve raw fish 2.1" in choices
+    assert "/retrieve 2.1(raw fish) 1" in choices
     assert command_to_message("/retrieve raw fish 2.1", snapshot, "Alice") == {
         "type": "start_action",
         "action": "retrieve",
@@ -1947,13 +2062,12 @@ def test_copper_metalworking_content_renders_with_chinese_support():
     assert "斧头模具" in panel
     assert "矛头" in panel
     assert "铜刀" in inventory
-    assert "耐久  77 ███████░░░" in inventory
+    assert "███████░░░" in inventory
     assert "铜铲" in inventory
-    assert "耐久  84 ████████░░" in inventory
+    assert "████████░░" in inventory
     assert "铜瓶" in inventory
-    assert "容量 600" in inventory
     assert "铜罐" in inventory
-    assert "净水 50/150" in inventory
+    assert "███░░░░░░░" in inventory
     assert "铜板" in inventory
     assert "铜针" in inventory
     assert "刀模具" in inventory
