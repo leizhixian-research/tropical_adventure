@@ -5,10 +5,12 @@ A self-hosted multiplayer terminal survival game inspired by detailed island sur
 ## Run
 
 ```bash
-uv run python -m tropical_adventure.server --save saves/island.json --host 127.0.0.1 --port 8765
-uv run python -m tropical_adventure.client --host 127.0.0.1 --port 8765 --name Alice
-uv run python -m tropical_adventure.client --host 127.0.0.1 --port 8765 --name Alice --lang zh
+uv run python -m tropical_adventure.server --save saves/island.json --host 127.0.0.1 --port 12222
+uv run python -m tropical_adventure.client --host 127.0.0.1 --port 12222 --name Alice
+uv run python -m tropical_adventure.client --host 127.0.0.1 --port 12222 --name Alice --lang zh
 ```
+
+On Windows, a player can double-click `start.bat` from the repo folder and enter the server IP, port, player name, language, and optional invite code. The launcher defaults to Chinese and runs the client with `uv`.
 
 Use `--host 0.0.0.0` only for intentional LAN/trusted hosting. Prefer `--invite` when binding beyond localhost.
 
