@@ -13,10 +13,13 @@ CARD_SURVIVAL_STAT_RANGES = {
     "wakefulness": (0, 192),
     "appetite": (0, 250),
     "entertainment": (0, 96),
-    "hydration": (0, 180),
-    "satiation": (0, 151),
+    "hydration": (0, 288),
+    "satiation": (0, 200),
     "stamina": (0, 32),
-    "nausea": (0, 20),
+    "nausea": (0, 24),
+    "parasites": (0, 1500),
+    "malaria": (0, 32263),
+    "quinine": (0, 96),
 }
 
 
@@ -30,6 +33,74 @@ def scale_wiki_delta(delta: float, stat: str) -> int:
     return max(0, min(PLAYER_STAT_RANGE, round(delta * PLAYER_STAT_RANGE / (high - low))))
 
 
+WEATHER_DEFS: dict[str, dict[str, Any]] = {
+    "clear": {"rain_value": 0, "sun_strength": 6, "duration_minutes": 360},
+    "partially cloudy": {"rain_value": 0, "sun_strength": 4, "duration_minutes": 240},
+    "cloudy": {"rain_value": 0, "sun_strength": 2, "duration_minutes": 240},
+    "light rain": {"rain_value": 3, "sun_strength": 2, "duration_minutes": 240},
+    "heavy rain": {"rain_value": 5, "sun_strength": 0, "duration_minutes": 240},
+    "storm": {"rain_value": 5, "sun_strength": 0, "duration_minutes": 360},
+}
+WEATHER_ALIASES = {
+    "rain": "light rain",
+    "partly cloudy": "partially cloudy",
+}
+RAIN_COUNTER_MIN = 0
+RAIN_COUNTER_MAX = 700
+RAIN_COUNTER_START = 400
+RAIN_COUNTER_STEP_MINUTES = 15
+RAIN_COUNTER_SEASON_DELTAS = {
+    "dry": -1,
+    "wet": 5,
+}
+RAIN_COUNTER_WEATHER_DELTAS = {
+    "light rain": (-6, -3),
+    "heavy rain": (-12, -6),
+    "storm": (-16, -8),
+}
+RAIN_COUNTER_WEIGHT_BONUSES = {
+    "clear": (0, -30),
+    "partially cloudy": (0, 10),
+    "cloudy": (0, 12),
+    "light rain": (0, 20),
+    "heavy rain": (0, 30),
+    "storm": (0, 30),
+}
+WEATHER_TRANSITION_WEIGHTS = {
+    "dry": (
+        ("clear", 45),
+        ("partially cloudy", 25),
+        ("cloudy", 15),
+        ("light rain", 10),
+        ("heavy rain", 3),
+        ("storm", 2),
+    ),
+    "wet": (
+        ("clear", 15),
+        ("partially cloudy", 15),
+        ("cloudy", 20),
+        ("light rain", 25),
+        ("heavy rain", 18),
+        ("storm", 7),
+    ),
+}
+HIGH_TIDE_WINDOWS = ((2 * 60, 6 * 60), (14 * 60, 18 * 60))
+STORM_EXPOSED_LOCATIONS = {"bay", "beach", "desolate beach", "jungle outskirts", "mangrove forest", "rocks"}
+STORM_DAMAGE_OBJECTS = {
+    "drying rack",
+    "fish trap",
+    "leaf bed",
+    "raincatcher",
+    "shelter",
+    "snare trap",
+    "solar still",
+}
+STORM_DAMAGE_INTERVAL_MINUTES = 180
+STORM_DAMAGE_RANGE = (20, 35)
+STORM_EVENT_WETNESS = 10
+STORM_EVENT_BRUISING = 4
+
+
 RAFT_RESCUE_DISTANCE = 2016
 RAFT_EVENT_PASSING_SHIP = "passing ship"
 RAFT_PASSING_SHIP_DISTANCE_TRIGGERS = (336, 672, 1008, 1344, 1680)
@@ -37,6 +108,28 @@ RAFT_PASSING_SHIP_WINDOW_MINUTES = 90
 RAFT_SIGNAL_PROGRESS_RANGES = {
     "wave and shout": (1, 10),
     "signal with mirror": (10, 30),
+}
+RAFT_BUILD_STAGES = (
+    {"materials": {"log": 4, "rope": 4}, "tool_wear": {"stone axe": 1}},
+    {"materials": {"log": 4, "rope": 4}, "tool_wear": {"stone axe": 1}},
+    {"materials": {"log": 3, "rope": 7, "long stick": 2}, "tool_wear": {}},
+    {"materials": {"leather": 4, "fiber cord": 6, "rope": 2}, "tool_wear": {"needle": 2}},
+    {"materials": {"leather": 4, "fiber cord": 6, "rope": 2}, "tool_wear": {"needle": 2}},
+)
+TINDER_ITEMS = ("dry leaves", "wood shavings")
+TINDER_LIGHTING_ACTIONS = (
+    "light tinder with hand drill",
+    "light tinder with bow drill",
+    "light tinder from fire",
+    "light tinder with mirror",
+)
+FIRE_SOURCE_ITEMS = ("lit tinder", "lit torch")
+TORCH_MAX_FUEL = 16
+TORCH_FUEL_MINUTES = 15
+MATERIAL_ALTERNATIVES = {
+    "bone splinters": ("bone splinters", "bird bones"),
+    "leaves": ("leaves", "dry leaves"),
+    "pretty seashells": ("pretty seashells", "crushed conch"),
 }
 
 
@@ -54,7 +147,12 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
     "pick up": {
         "duration": 3,
         "zh": "捡起",
-        "description": {"en": "pick up an item from the ground", "zh": "从地上捡起物品"},
+        "description": {"en": "pick up an item from the current scene", "zh": "从当前位置捡起物品"},
+    },
+    "take off backpack": {
+        "duration": 3,
+        "zh": "取下背包",
+        "description": {"en": "take off the worn backpack and set it down", "zh": "取下背包并放到当前位置"},
     },
     "drop": {
         "duration": 3,
@@ -141,11 +239,10 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "zh": "收集",
         "description": {"en": "collect nearby natural materials", "zh": "收集附近的自然材料"},
     },
-    "forage": {
-        "duration": 12,
-        "zh": "觅食",
-        "description": {"en": "look for edible or medicinal plants", "zh": "觅食，寻找可食用或药用植物"},
-        "skill": "herbology",
+    "go for a walk": {
+        "duration": 15,
+        "zh": "散步",
+        "description": {"en": "walk the shore looking for loose useful finds", "zh": "沿着海岸散步寻找零散可用物"},
     },
     "forage tide pool": {
         "duration": 15,
@@ -153,10 +250,16 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "description": {"en": "search tide pools for shellfish and sea plants", "zh": "在潮池里寻找贝类和海藻"},
         "skill": "fishing",
     },
+    "dive": {
+        "duration": 30,
+        "zh": "潜水",
+        "description": {"en": "dive in nearby sea water for shellfish and seabed finds", "zh": "潜入附近海水寻找贝类和海底物品"},
+        "skill": "swimming",
+    },
     "harvest coconuts": {
         "duration": 30,
         "zh": "采椰子",
-        "description": {"en": "climb a palm and harvest a coconut", "zh": "爬上棕榈树采下椰子"},
+        "description": {"en": "climb a fruiting palm and harvest a coconut", "zh": "爬上结果的棕榈树采下椰子"},
         "skill": "climbing",
     },
     "harvest aloe vera": {
@@ -245,6 +348,13 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "duration": 30,
         "zh": "采咖啡果",
         "description": {"en": "harvest coffee berries from a highland bush", "zh": "从高地咖啡灌木采集咖啡果"},
+        "skill": "herbology",
+    },
+    "harvest cinchona bark": {
+        "duration": 30,
+        "zh": "采金鸡纳树皮",
+        "description": {"en": "cut medicinal bark from a cinchona tree", "zh": "从金鸡纳树上割取药用树皮"},
+        "tool": {"sharp stone": 1},
         "skill": "herbology",
     },
     "harvest chilies": {
@@ -380,14 +490,14 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
     "craft woven basket": {
         "duration": 120,
         "zh": "编篮子",
-        "description": {"en": "weave a palm basket for carrying and storage", "zh": "编一个可携带和储物的棕榈篮"},
+        "description": {"en": "weave a palm basket for carrying or placed storage", "zh": "编一个可携带或放置使用的棕榈储物篮"},
         "inputs": {"palm weave": 6, "palm fronds": 4},
         "skill": "crafting",
     },
     "craft woven backpack": {
         "duration": 120,
         "zh": "编背篓",
-        "description": {"en": "weave a rope-backed palm basket for carrying supplies", "zh": "编一个带绳背带的棕榈背篓"},
+        "description": {"en": "weave a rope-backed palm basket worn as a backpack", "zh": "编一个带绳背带、背在背上的棕榈背篓"},
         "inputs": {"palm weave": 6, "palm fronds": 4, "rope": 1},
         "skill": "crafting",
     },
@@ -395,7 +505,7 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "duration": 30,
         "zh": "给篮子加绳",
         "description": {"en": "tie rope to a basket so it can be carried on your back", "zh": "给篮子绑上绳子，做成可以背负的背篓"},
-        "inputs": {"basket": 1, "rope": 1},
+        "inputs": {"rope": 1},
         "skill": "crafting",
     },
     "detach rope from woven backpack": {
@@ -408,7 +518,7 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
     "place basket": {
         "duration": 3,
         "zh": "放置篮子",
-        "description": {"en": "set a basket down as a small storage container", "zh": "把篮子放下作为小型储物容器"},
+        "description": {"en": "set a carried basket down as a small storage container", "zh": "把携带的篮子放下作为小型储物容器"},
         "inputs": {"basket": 1},
         "skill": "crafting",
     },
@@ -426,6 +536,25 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "inputs": {"sharp stone": 1, "long stick": 1, "fiber cord": 1},
         "skill": "crafting",
     },
+    "craft hand drill": {
+        "duration": 30,
+        "zh": "制作手钻",
+        "description": {"en": "carve sticks into a hand drill for lighting tinder", "zh": "把树枝削成可点燃火绒的手钻"},
+        "inputs": {"sticks": 2},
+        "tool": {"sharp stone": 1},
+        "skill": "crafting",
+    },
+    "craft bow drill": {
+        "duration": 60,
+        "zh": "制作弓钻",
+        "description": {
+            "en": "make a bow drill that lights tinder faster and spares your hands",
+            "zh": "制作更快点燃火绒且更省手的弓钻",
+        },
+        "inputs": {"wood": 1, "fiber cord": 1, "long stick": 1},
+        "tool": {"sharp stone": 1},
+        "skill": "woodworking",
+    },
     "make wood shavings": {
         "duration": 15,
         "zh": "削木屑",
@@ -433,19 +562,141 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "inputs": {"wood": 1},
         "skill": "crafting",
     },
+    "light tinder with hand drill": {
+        "duration": 30,
+        "zh": "用手钻点火绒",
+        "description": {"en": "use a hand drill on dry tinder to make lit tinder", "zh": "用手钻点燃干燥火绒"},
+        "tool": {"hand drill": 1},
+        "skill": "crafting",
+    },
+    "light tinder with bow drill": {
+        "duration": 15,
+        "zh": "用弓钻点火绒",
+        "description": {"en": "use a bow drill to light tinder quickly", "zh": "用弓钻快速点燃火绒"},
+        "tool": {"bow drill": 1},
+        "skill": "crafting",
+    },
+    "light tinder from fire": {
+        "duration": 3,
+        "zh": "从火堆点火绒",
+        "description": {"en": "light dry tinder from an existing fire", "zh": "用现有火源点燃干燥火绒"},
+        "skill": "crafting",
+    },
+    "light tinder with mirror": {
+        "duration": 45,
+        "zh": "用信号镜点火绒",
+        "description": {
+            "en": "focus strong sunlight through a signaling mirror to light dry tinder",
+            "zh": "用信号镜聚焦强阳光点燃干燥火绒",
+        },
+        "tool": {"signaling mirror": 1},
+        "skill": "crafting",
+    },
+    "craft torch": {
+        "duration": 15,
+        "zh": "制作火把",
+        "description": {"en": "bind wood, cord, and dry leaves into a portable torch", "zh": "把木材、纤维绳和干叶绑成可携带的火把"},
+        "inputs": {"wood": 1, "fiber cord": 1, "dry leaves": 1},
+        "skill": "crafting",
+    },
+    "light torch": {
+        "duration": 3,
+        "zh": "点燃火把",
+        "description": {"en": "light a carried torch from a fire source", "zh": "用火源点燃携带的火把"},
+        "inputs": {"torch": 1},
+        "skill": "crafting",
+    },
+    "extinguish torch": {
+        "duration": 3,
+        "zh": "熄灭火把",
+        "description": {"en": "put out a lit torch before it burns away", "zh": "在火把烧尽前将它熄灭"},
+        "inputs": {"lit torch": 1},
+        "skill": "crafting",
+    },
     "start fire": {
-        "duration": 36,
+        "duration": 6,
         "zh": "生火",
-        "description": {"en": "start a fire from carried materials", "zh": "用携带材料生火"},
-        "inputs": {"sticks": 2, "leaves": 1},
+        "description": {"en": "start a fire from sticks and lit tinder", "zh": "用树枝和点燃的火绒生火"},
+        "inputs": {"sticks": 2, "lit tinder": 1},
+        "skill": "crafting",
+    },
+    "collect bone splinters": {
+        "duration": 15,
+        "zh": "收集骨片",
+        "description": {"en": "pick useful splinters from old bones", "zh": "从旧骨骸中挑出可用骨片"},
+        "skill": "crafting",
+    },
+    "collect feathers": {
+        "duration": 15,
+        "zh": "收集羽毛",
+        "description": {"en": "collect loose feathers from a coastal nest", "zh": "从海鸟巢附近收集散落羽毛"},
+        "skill": "crafting",
+    },
+    "craft bone hook": {
+        "duration": 15,
+        "zh": "制作骨钩",
+        "description": {"en": "carve a bone splinter into a fishing hook", "zh": "把骨片削成钓鱼用的骨钩"},
+        "inputs": {"bone splinters": 1},
+        "skill": "crafting",
+    },
+    "craft fishing line": {
+        "duration": 15,
+        "zh": "制作鱼线",
+        "description": {"en": "tie fiber cord and a bone hook into a simple fishing line", "zh": "用纤维绳和骨钩做成简易鱼线"},
+        "inputs": {"fiber cord": 3, "bone hook": 1},
+        "skill": "crafting",
+    },
+    "craft fishing rod": {
+        "duration": 45,
+        "zh": "制作鱼竿",
+        "description": {"en": "lash a long stick, cord, and bone hook into a sturdier fishing rod", "zh": "把长树枝、纤维绳和骨钩绑成更结实的鱼竿"},
+        "inputs": {"long stick": 1, "fiber cord": 4, "bone hook": 1},
+        "skill": "crafting",
+    },
+    "craft fish bait": {
+        "duration": 30,
+        "zh": "制作鱼饵",
+        "description": {"en": "make artificial fish bait from shells, cord, and feathers", "zh": "用贝壳、纤维绳和羽毛制作人工鱼饵"},
+        "inputs": {"pretty seashells": 3, "fiber cord": 1, "feathers": 2},
         "skill": "crafting",
     },
     "fish": {
-        "duration": 36,
+        "duration": 60,
         "zh": "捕鱼",
-        "description": {"en": "catch fish in coastal fishing spots", "zh": "在沿海渔点捕鱼"},
-        "inputs": {"sharp stone": 1},
+        "description": {"en": "fish from sea water with a line or rod", "zh": "用鱼线或鱼竿在海水边钓鱼"},
+        "tool": {"fishing line": 1},
         "skill": "fishing",
+    },
+    "fish with bait": {
+        "duration": 60,
+        "zh": "用鱼饵钓鱼",
+        "description": {"en": "fish with bait to improve the chance of a catch", "zh": "用鱼饵钓鱼，提高上钩几率"},
+        "inputs": {"fish bait": 1},
+        "tool": {"fishing line": 1},
+        "skill": "fishing",
+    },
+    "spear fish": {
+        "duration": 30,
+        "zh": "叉鱼",
+        "description": {"en": "wade into shallow sea water and spear fish", "zh": "涉入浅海，用长矛叉鱼"},
+        "tool": {"spear": 1},
+        "skill": "spear_fishing",
+    },
+    "break conch": {
+        "duration": 3,
+        "zh": "敲开海螺",
+        "description": {"en": "break a conch with a hammering stone and separate the meat", "zh": "用可敲击的石器敲开海螺并取出肉"},
+        "inputs": {"conch": 1},
+        "tool": {"hammer": 1},
+        "skill": "crafting",
+    },
+    "cook conch meat": {
+        "duration": 6,
+        "zh": "烤海螺肉",
+        "description": {"en": "cook rubbery conch meat over an active fire", "zh": "在火堆上烤熟有韧性的海螺肉"},
+        "inputs": {"conch meat": 1},
+        "skill": "cooking",
+        "blocking": False,
     },
     "dry fish": {
         "duration": 12,
@@ -454,6 +705,22 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "inputs": {"raw fish": 1},
         "skill": "cooking",
         "blocking": False,
+    },
+    "dry cinchona bark": {
+        "duration": 12,
+        "zh": "晾金鸡纳树皮",
+        "description": {"en": "set cinchona bark on a drying rack for quinine powder", "zh": "把金鸡纳树皮放上晾晒架，以便制成奎宁粉"},
+        "inputs": {"cinchona bark": 1},
+        "skill": "herbology",
+        "blocking": False,
+    },
+    "flesh skin": {
+        "duration": 60,
+        "zh": "刮净兽皮",
+        "description": {"en": "scrape fresh skin into hide that can cure into leather", "zh": "刮净新鲜兽皮，使其能风干成皮革"},
+        "inputs": {"fresh skin": 1},
+        "tool": {"sharp stone": 1},
+        "skill": "crafting",
     },
     "make aloe gel": {
         "duration": 30,
@@ -539,6 +806,14 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "description": {"en": "roast coffee beans beside an active fire", "zh": "在火边烘焙咖啡豆"},
         "inputs": {"coffee beans": 1},
         "skill": "cooking",
+    },
+    "grind cinchona powder": {
+        "duration": 60,
+        "zh": "磨金鸡纳粉",
+        "description": {"en": "grind dried cinchona bark into quinine powder", "zh": "把晒干的金鸡纳树皮磨成奎宁粉"},
+        "inputs": {"dried cinchona bark": 4},
+        "tool": {"heavy stone": 1},
+        "skill": "herbology",
     },
     "brew coffee": {
         "duration": 15,
@@ -629,9 +904,22 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "blocking": False,
     },
     "collect sand": {
-        "duration": 6,
+        "duration": 15,
         "zh": "收集沙子",
         "description": {"en": "scoop clean sand for mortar and filters", "zh": "收集可用于砂浆和过滤的干净沙子"},
+        "skill": "crafting",
+    },
+    "dig up sand": {
+        "duration": 15,
+        "zh": "挖沙子",
+        "description": {"en": "use a shovel to dig up a larger load of clean sand", "zh": "用铲子挖出更多干净沙子"},
+        "tool": {"copper shovel": 1},
+        "skill": "crafting",
+    },
+    "build sand castle": {
+        "duration": 30,
+        "zh": "堆沙堡",
+        "description": {"en": "shape beach sand into a small morale-boosting sand castle", "zh": "把沙子堆成能振奋心情的小沙堡"},
         "skill": "crafting",
     },
     "make quicklime": {
@@ -1013,6 +1301,15 @@ ACTION_DEFS: dict[str, dict[str, Any]] = {
         "inputs": {"sticks": 4, "leaves": 6, "vine": 2},
         "skill": "woodworking",
     },
+    "build raft": {
+        "duration": 90,
+        "zh": "建造木筏",
+        "description": {
+            "en": "advance the beach raft frame through one component stage",
+            "zh": "在海边推进木筏框架的一个建造阶段",
+        },
+        "skill": "crafting",
+    },
     "build shed": {
         "duration": 450,
         "zh": "建造棚屋",
@@ -1158,6 +1455,7 @@ PLANT_HARVESTS = {
     "cut palm fronds": {"resource": "palm fronds", "outputs": [("palm fronds", 4, 8)]},
     "hew log": {"resource": "large tree", "outputs": [("log", 1, 1), ("long stick", 2, 4), ("sticks", 4, 8)]},
     "harvest coffee berries": {"resource": "coffee bush", "outputs": [("coffee berries", 2, 3)]},
+    "harvest cinchona bark": {"resource": "cinchona tree", "outputs": [("cinchona bark", 3, 3)]},
     "harvest chilies": {"resource": "chilli plant", "outputs": [("chillies", 2, 3)]},
     "harvest jasmine": {"resource": "jasmine flowers", "outputs": [("jasmine flowers", 1, 1)]},
     "harvest assorted mushrooms": {"resource": "assorted mushrooms patch", "outputs": [("assorted mushrooms", 1, 2)]},
@@ -1166,6 +1464,8 @@ PLANT_HARVESTS = {
 }
 RESOURCE_HARVESTS = {
     **PLANT_HARVESTS,
+    "collect bone splinters": {"resource": "skeleton", "outputs": [("bone splinters", 1, 2)]},
+    "collect feathers": {"resource": "seagull nest", "outputs": [("feathers", 1, 2)]},
     "dig up mud": {"resource": "mud deposit", "outputs": [("mud pile", 3, 3)]},
     "dig up dirt": {"resource": "dry puddle dirt", "outputs": [("dirt pile", 3, 3), ("bugs", 0, 3)]},
 }
@@ -1174,14 +1474,16 @@ CONTEXTUAL_ACTIONS = {
     "drink",
     "eat",
     "pick up",
+    "take off backpack",
     "drop",
     "pack",
     "unpack",
     "store",
     "retrieve",
     "gather",
-    "forage",
+    "go for a walk",
     "forage tide pool",
+    "dive",
     "harvest coconuts",
     "explore",
     "move",
@@ -1194,7 +1496,11 @@ CONTEXTUAL_ACTIONS = {
     "signal with mirror",
     "treat wound",
     "fish",
+    "fish with bait",
+    "spear fish",
     "tend fire",
+    *TINDER_LIGHTING_ACTIONS,
+    "light torch",
     "check fish trap",
     "check snare trap",
     *RESOURCE_HARVESTS,
@@ -1211,9 +1517,14 @@ ITEM_WEIGHTS = {
     "banana": 120,
     "bandage leaves": 25,
     "basket": 500,
+    "bird bones": 25,
+    "bone hook": 10,
+    "bone splinters": 50,
+    "bow drill": 100,
     "bugs": 20,
     "charcoal": 60,
     "chillies": 30,
+    "cinchona bark": 25,
     "clay": 300,
     "clay bowl": 250,
     "clay jar": 350,
@@ -1224,9 +1535,12 @@ ITEM_WEIGHTS = {
     "coconut meat": 120,
     "coconut shell": 80,
     "coconut water": 150,
+    "conch": 50,
+    "conch meat": 25,
     "coffee": 150,
     "coffee beans": 30,
     "coffee berries": 80,
+    "cooked conch meat": 25,
     "cooked fish": 180,
     "cooked meat": 220,
     "cooked yam": 220,
@@ -1242,20 +1556,31 @@ ITEM_WEIGHTS = {
     "copper shovel": 650,
     "copper spear": 900,
     "crab": 160,
+    "crushed conch": 15,
     "digging stick": 400,
     "dirt pile": 300,
     "dried fish": 120,
+    "dried cinchona bark": 25,
+    "dry leaves": 20,
     "fiber cord": 20,
+    "feathers": 10,
     "fine dirt": 120,
+    "fish bait": 10,
+    "fishing line": 50,
+    "fishing rod": 250,
+    "fleshed skin": 250,
+    "fresh skin": 250,
     "ginger": 40,
     "ginger tea": 150,
     "heavy stone": 500,
+    "hand drill": 100,
     "jasmine flowers": 20,
     "jasmine tea": 150,
     "knife mold": 350,
     "leather": 250,
     "leaves": 20,
     "lemongrass": 30,
+    "lit tinder": 25,
     "log": 1500,
     "long stick": 300,
     "magic mushrooms": 50,
@@ -1269,6 +1594,7 @@ ITEM_WEIGHTS = {
     "plastic bottle": 50,
     "prawns": 80,
     "puffballs": 80,
+    "quinine powder": 10,
     "quicklime": 200,
     "raw fish": 180,
     "raw meat": 220,
@@ -1296,24 +1622,31 @@ ITEM_WEIGHTS = {
     "stones": 100,
     "storage chest": 3000,
     "supply chest": 3000,
+    "lit torch": 150,
     "unfired clay bowl": 250,
     "unfired clay jar": 350,
     "unfired clay vase": 700,
     "unfired cooking pot": 500,
     "unsafe water": 150,
+    "torch": 150,
     "urchin": 80,
     "woven backpack": 500,
     "wood": 500,
-    "wood shavings": 30,
+    "wood shavings": 15,
     "yam": 250,
     "yam curry": 350,
 }
 
 TOOL_DURABILITY = {
     "digging stick": 16,
+    "bow drill": 30,
+    "hand drill": 30,
+    "fishing line": 15,
+    "fishing rod": 45,
     "sharp stone": 40,
     "stone axe": 100,
     "copper knife": 40,
+    "copper needle": 4,
     "axe head": 150,
     "spear head": 150,
     "copper axe": 50,
@@ -1325,6 +1658,9 @@ TOOL_WEAR = {
     "build cistern": {"digging stick": 8},
     "cut nipa fruit": {"sharp stone": 4},
     "cut palm fronds": {"sharp stone": 3},
+    "craft bow drill": {"sharp stone": 1},
+    "harvest cinchona bark": {"sharp stone": 3},
+    "flesh skin": {"sharp stone": 1},
     "hew log": {"stone axe": 12},
     "make aloe gel": {"sharp stone": 4},
     "prepare yam": {"sharp stone": 4},
@@ -1333,6 +1669,7 @@ TOOL_WEAR = {
     "cut sago palm": {"stone axe": 15},
     "split sago log": {"stone axe": 10},
     "craft copper shovel": {"sharp stone": 5},
+    "dig up sand": {"copper shovel": 1},
     "hammer copper sheet": {"heavy stone": 6},
     "make copper needles": {"copper knife": 4},
     "craft copper bottle": {"heavy stone": 1},
@@ -1340,6 +1677,11 @@ TOOL_WEAR = {
     "build cellar": {"digging stick": 8},
     "build storage chest": {"stone axe": 2},
     "build supply chest": {"stone axe": 2},
+    "light tinder with bow drill": {"bow drill": 1},
+    "light tinder with hand drill": {"hand drill": 1},
+    "fish": {"fishing line": 1},
+    "fish with bait": {"fishing line": 1},
+    "spear fish": {"spear": 1},
 }
 
 COPPER_MOLD_OUTPUTS = {
@@ -1423,9 +1765,12 @@ COOKING_POT_MEALS = {
 FOOD_VALUES = {
     "banana": scale_wiki_delta(30, "satiation"),
     "chillies": scale_wiki_delta(15, "satiation"),
+    "quinine powder": 0,
     "coconut": scale_wiki_delta(23, "satiation"),
     "coconut meat": scale_wiki_delta(27, "satiation"),
     "coconut fish": scale_wiki_delta(68, "satiation"),
+    "conch meat": scale_wiki_delta(10, "satiation"),
+    "cooked conch meat": scale_wiki_delta(5, "satiation"),
     "cooked fish": scale_wiki_delta(53, "satiation"),
     "cooked meat": scale_wiki_delta(60, "satiation"),
     "cooked yam": scale_wiki_delta(45, "satiation"),
@@ -1461,6 +1806,8 @@ FOOD_SATURATION_STATS = {
     "coconut meat": "coconut_appetite",
     "coconut water": "coconut_appetite",
     "coconut fish": "fish_appetite",
+    "conch meat": "mollusk_appetite",
+    "cooked conch meat": "mollusk_appetite",
     "cooked yam": "yam_appetite",
     "cooked fish": "fish_appetite",
     "dried fish": "fish_appetite",
@@ -1491,6 +1838,8 @@ FOOD_SATURATION_STATS = {
 }
 FOOD_SATURATION_VALUES = {
     "coconut fish": 28,
+    "conch meat": 25,
+    "cooked conch meat": 15,
     "fried puffballs": 24,
     "soaked sago": 35,
     "sago pulp": 30,
@@ -1516,8 +1865,13 @@ SPOIL_MINUTES = {
     "banana": 2 * 1440,
     "chillies": 5 * 1440,
     "coffee berries": 4 * 1440,
+    "cinchona bark": 3 * 1440,
+    "fresh skin": 4 * 1440,
+    "fleshed skin": 4 * 1440,
     "raw fish": 720,
     "raw meat": 720,
+    "conch meat": 2 * 1440,
+    "cooked conch meat": 2 * 1440,
     "coconut fish": 2 * 1440,
     "fried puffballs": 2 * 1440,
     "sago cake": 4 * 1440,
@@ -1539,15 +1893,51 @@ SPOIL_MINUTES = {
     "dried fish": 5 * 1440,
     "ginger": 5 * 1440,
     "lemongrass": 4 * 1440,
+    "lit tinder": 90,
+    "lit torch": TORCH_MAX_FUEL * TORCH_FUEL_MINUTES,
     "magic mushrooms": 4 * 1440,
     "puffballs": 4 * 1440,
     "assorted mushrooms": 4 * 1440,
     "jasmine flowers": 2 * 1440,
+    "leaves": 5 * 1440,
     "nipa seeds": 4 * 1440,
     "nipa fruit": 4 * 1440,
     "spider lily leaves": 4 * 1440,
 }
 TIDE_POOL_OUTPUTS = ["prawns", "crab", "seaweed", "urchin"]
+WALK_LOCATIONS = {"bay", "beach"}
+WALK_FATIGUE_COST = scale_wiki_delta(2, "stamina")
+WALK_STRESS_RELIEF = scale_wiki_delta(10, "stress")
+WALK_FOOT_DAMAGE = 1
+DIVE_LOCATIONS = {"atoll", "beach", "bay", "bird rock", "desolate beach", "flooded chamber", "mangrove forest", "secret cove", "tidal cave"}
+DIVE_MAX_FATIGUE = PLAYER_STAT_RANGE - scale_wiki_value(11, "stamina")
+DIVE_FATIGUE_COST = scale_wiki_delta(10, "stamina")
+DIVE_MORALE_GAIN = scale_wiki_delta(4, "morale")
+DIVE_STRESS_RELIEF = scale_wiki_delta(48, "stress")
+DIVE_ENTERTAINMENT_GAIN = scale_wiki_delta(16, "entertainment")
+DIVE_FILTH_REMOVAL = 75
+DIVE_WETNESS = 100
+DIVE_NOTHING_WEIGHT = 225
+DIVE_SWIMMING_NOTHING_REDUCTION = 200
+DIVE_OUTPUT_WEIGHTS = {
+    "default": {"conch": 60, "urchin": 10, "stones": 30},
+    "bay": {"conch": 60, "urchin": 15, "seaweed": 100, "stones": 30},
+    "mangrove forest": {"crab": 50, "seaweed": 50, "stones": 30},
+    "flooded chamber": {"conch": 50, "urchin": 20, "crab": 20, "stones": 30},
+    "tidal cave": {"conch": 50, "urchin": 20, "crab": 20, "stones": 30},
+}
+LINE_FISH_LOCATIONS = {"atoll", "beach", "bay", "bird rock", "desolate beach", "flooded chamber", "mangrove forest", "raft", "sea cave", "secret cove", "tidal cave"}
+LINE_FISH_STRESS_RELIEF = scale_wiki_delta(50, "stress")
+LINE_FISH_WEIGHTS = {
+    "fish": {"nothing": 30, "fish": 6, "skill_reduction": 15, "rod_reduction": 5},
+    "fish with bait": {"nothing": 15, "fish": 20, "skill_reduction": 10, "rod_reduction": 4},
+}
+SPEAR_FISH_LOCATIONS = {"beach", "bay", "secret cove", "tidal cave"}
+SPEAR_FISH_BASE_WEIGHTS = {
+    "bay": (27, 12),
+    "default": (25, 8),
+}
+SPEAR_FISH_WETNESS = 60
 FISH_TRAP_OUTPUTS = ["raw fish", "prawns", "crab"]
 SNARE_TRAP_OUTPUTS = ["raw meat"]
 FISH_TRAP_SOAK_RANGE = (25 * 60, 3 * 1440 + 3 * 60)
@@ -1560,16 +1950,17 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "ground": {"coconut": 2, "sticks": 2},
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-            "coconut": {
+            "coconut palm": {
                 "source": "coconut palms",
                 "qty": 2,
                 "capacity": 2,
                 "regen_minutes": 3 * 1440,
                 "regen_progress": 0,
-                "action": "forage",
+                "action": "harvest coconuts",
             },
-            "sticks": {"source": "sand", "infinite": True, "action": "forage"},
-            "leaves": {"source": "coconut palms", "infinite": True, "action": "forage"},
+            "sticks": {"source": "sand", "infinite": True, "action": "gather"},
+            "leaves": {"source": "coconut palms", "infinite": True, "action": "gather"},
+            "dry leaves": {"source": "dry palm litter", "infinite": True, "action": "gather"},
             "palm fronds": {"source": "coconut palms", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "aloe vera": {"source": "sand", "qty": 6, "capacity": 6, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
             "lemongrass": {"source": "coconut palms", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest lemongrass"},
@@ -1579,15 +1970,16 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["trees", "vines", "leaf litter"],
         "resources": {
             "sticks": {"source": "trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "leaf litter", "infinite": True, "action": "forage"},
-            "vine": {"source": "vines", "infinite": True, "action": "forage"},
-            "coconut": {
+            "leaves": {"source": "leaf litter", "infinite": True, "action": "gather"},
+            "dry leaves": {"source": "dry leaf litter", "infinite": True, "action": "gather"},
+            "vine": {"source": "vines", "infinite": True, "action": "gather"},
+            "coconut palm": {
                 "source": "trees",
                 "qty": 2,
                 "capacity": 2,
                 "regen_minutes": 4 * 1440,
                 "regen_progress": 0,
-                "action": "forage",
+                "action": "harvest coconuts",
             },
             "aloe vera": {"source": "leaf litter", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
             "lemongrass": {"source": "leaf litter", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest lemongrass"},
@@ -1604,10 +1996,11 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "resources": {
             "sticks": {"source": "dense trees", "infinite": True, "action": "gather"},
             "long stick": {"source": "dense trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "leaf litter", "infinite": True, "action": "forage"},
-            "vine": {"source": "vines", "infinite": True, "action": "forage"},
-            "bandage leaves": {"source": "leaf litter", "infinite": True, "action": "forage"},
+            "leaves": {"source": "leaf litter", "infinite": True, "action": "gather"},
+            "vine": {"source": "vines", "infinite": True, "action": "gather"},
+            "bandage leaves": {"source": "leaf litter", "infinite": True, "action": "gather"},
             "large tree": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 14 * 1440, "regen_progress": 0, "action": "hew log"},
+            "cinchona tree": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 14 * 1440, "regen_progress": 0, "action": "harvest cinchona bark"},
             "palm fronds": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "banana tree": {"source": "dense trees", "qty": 3, "capacity": 3, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "collect bananas"},
             "puffballs patch": {"source": "leaf litter", "qty": 1, "capacity": 1, "regen_minutes": 4 * 1440, "regen_progress": 0, "action": "harvest puffballs"},
@@ -1619,15 +2012,15 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["sea", "sand", "coconut palms", "fish"],
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-            "coconut": {
+            "coconut palm": {
                 "source": "coconut palms",
                 "qty": 2,
                 "capacity": 2,
                 "regen_minutes": 3 * 1440,
                 "regen_progress": 0,
-                "action": "forage",
+                "action": "harvest coconuts",
             },
-            "stones": {"source": "sand", "infinite": True, "action": "forage"},
+            "stones": {"source": "sand", "infinite": True, "action": "gather"},
             "raw fish": {"source": "fish", "infinite": True, "action": "fish"},
             "palm fronds": {"source": "coconut palms", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "aloe vera": {"source": "sand", "qty": 6, "capacity": 6, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
@@ -1638,9 +2031,9 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["mangrove roots", "flooded mud", "palm fronds"],
         "resources": {
             "unsafe water": {"source": "flooded mud", "infinite": True, "action": "gather"},
-            "leaves": {"source": "palm fronds", "infinite": True, "action": "forage"},
-            "sticks": {"source": "mangrove roots", "infinite": True, "action": "forage"},
-            "stones": {"source": "flooded mud", "infinite": True, "action": "forage"},
+            "leaves": {"source": "palm fronds", "infinite": True, "action": "gather"},
+            "sticks": {"source": "mangrove roots", "infinite": True, "action": "gather"},
+            "stones": {"source": "flooded mud", "infinite": True, "action": "gather"},
             "palm fronds": {"source": "palm fronds", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "ginger plant": {"source": "flooded mud", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest ginger"},
             "nipa palm": {"source": "palm fronds", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "cut nipa fruit"},
@@ -1652,9 +2045,9 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["rain puddles", "sago palms", "dense trees"],
         "resources": {
             "unsafe water": {"source": "rain puddles", "infinite": True, "action": "gather"},
-            "leaves": {"source": "sago palms", "infinite": True, "action": "forage"},
-            "vine": {"source": "dense trees", "infinite": True, "action": "forage"},
-            "bandage leaves": {"source": "dense trees", "infinite": True, "action": "forage"},
+            "leaves": {"source": "sago palms", "infinite": True, "action": "gather"},
+            "vine": {"source": "dense trees", "infinite": True, "action": "gather"},
+            "bandage leaves": {"source": "dense trees", "infinite": True, "action": "gather"},
             "assorted mushrooms patch": {"source": "dense trees", "qty": 1, "capacity": 1, "regen_minutes": 4 * 1440, "regen_progress": 0, "action": "harvest assorted mushrooms"},
             "banana tree": {"source": "dense trees", "qty": 3, "capacity": 3, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "collect bananas"},
             "ginger plant": {"source": "rain puddles", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest ginger"},
@@ -1671,9 +2064,9 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "resources": {
             "sticks": {"source": "dense trees", "infinite": True, "action": "gather"},
             "long stick": {"source": "dense trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "deep shade", "infinite": True, "action": "forage"},
-            "vine": {"source": "vines", "infinite": True, "action": "forage"},
-            "bandage leaves": {"source": "deep shade", "infinite": True, "action": "forage"},
+            "leaves": {"source": "deep shade", "infinite": True, "action": "gather"},
+            "vine": {"source": "vines", "infinite": True, "action": "gather"},
+            "bandage leaves": {"source": "deep shade", "infinite": True, "action": "gather"},
             "large tree": {"source": "dense trees", "qty": 3, "capacity": 3, "regen_minutes": 14 * 1440, "regen_progress": 0, "action": "hew log"},
             "palm fronds": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "banana tree": {"source": "dense trees", "qty": 3, "capacity": 3, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "collect bananas"},
@@ -1700,15 +2093,15 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["sea", "sand", "coconut palms"],
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-            "coconut": {
+            "coconut palm": {
                 "source": "coconut palms",
                 "qty": 2,
                 "capacity": 2,
                 "regen_minutes": 3 * 1440,
                 "regen_progress": 0,
-                "action": "forage",
+                "action": "harvest coconuts",
             },
-            "leaves": {"source": "coconut palms", "infinite": True, "action": "forage"},
+            "leaves": {"source": "coconut palms", "infinite": True, "action": "gather"},
             "palm fronds": {"source": "coconut palms", "qty": 2, "capacity": 2, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
         },
     },
@@ -1717,22 +2110,25 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
+            "seagull nest": {"source": "seagull nests", "qty": 3, "capacity": 3, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "collect feathers"},
         },
     },
     "desolate beach": {
         "features": ["sea", "sand", "debris"],
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-            "sticks": {"source": "debris", "infinite": True, "action": "forage"},
-            "stones": {"source": "sand", "infinite": True, "action": "forage"},
+            "sticks": {"source": "debris", "infinite": True, "action": "gather"},
+            "stones": {"source": "sand", "infinite": True, "action": "gather"},
             "aloe vera": {"source": "sand", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
+            "skeleton": {"source": "skeleton", "qty": 2, "capacity": 2, "regen_progress": 0, "action": "collect bone splinters"},
         },
     },
     "eastern grasslands": {
         "features": ["grass", "small trees", "open sun"],
         "resources": {
             "sticks": {"source": "small trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "grass", "infinite": True, "action": "forage"},
+            "leaves": {"source": "grass", "infinite": True, "action": "gather"},
+            "dry leaves": {"source": "dry grass", "infinite": True, "action": "gather"},
             "aloe vera": {"source": "open sun", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
             "chilli plant": {"source": "grass", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest chilies"},
         },
@@ -1741,7 +2137,8 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["grass", "small trees", "open sun"],
         "resources": {
             "sticks": {"source": "small trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "grass", "infinite": True, "action": "forage"},
+            "leaves": {"source": "grass", "infinite": True, "action": "gather"},
+            "dry leaves": {"source": "dry grass", "infinite": True, "action": "gather"},
             "chilli plant": {"source": "grass", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest chilies"},
             "lemongrass": {"source": "grass", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest lemongrass"},
             "magic mushroom patch": {"source": "grass", "qty": 1, "capacity": 1, "regen_minutes": 4 * 1440, "regen_progress": 0, "action": "harvest magic mushrooms"},
@@ -1751,7 +2148,7 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["high cliffs", "stone outcrops", "dry grass"],
         "resources": {
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
-            "sticks": {"source": "dry grass", "infinite": True, "action": "forage"},
+            "sticks": {"source": "dry grass", "infinite": True, "action": "gather"},
             "aloe vera": {"source": "dry grass", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
         },
     },
@@ -1759,7 +2156,7 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["high cliffs", "stone outcrops", "dry grass"],
         "resources": {
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
-            "sticks": {"source": "dry grass", "infinite": True, "action": "forage"},
+            "sticks": {"source": "dry grass", "infinite": True, "action": "gather"},
             "aloe vera": {"source": "dry grass", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest aloe vera"},
             "lemongrass": {"source": "dry grass", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest lemongrass"},
         },
@@ -1770,8 +2167,9 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
             "stones": {"source": "high cliffs", "infinite": True, "action": "gather"},
             "sticks": {"source": "dense trees", "infinite": True, "action": "gather"},
             "long stick": {"source": "dense trees", "infinite": True, "action": "gather"},
-            "vine": {"source": "vines", "infinite": True, "action": "forage"},
+            "vine": {"source": "vines", "infinite": True, "action": "gather"},
             "coffee bush": {"source": "dense trees", "qty": 1, "capacity": 1, "regen_minutes": 7 * 1440, "regen_progress": 0, "action": "harvest coffee berries"},
+            "cinchona tree": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 14 * 1440, "regen_progress": 0, "action": "harvest cinchona bark"},
             "snakegrass patch": {"source": "vines", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest snakegrass"},
         },
     },
@@ -1780,8 +2178,8 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "resources": {
             "unsafe water": {"source": "rain puddles", "infinite": True, "action": "gather"},
             "long stick": {"source": "dense trees", "infinite": True, "action": "gather"},
-            "leaves": {"source": "dense trees", "infinite": True, "action": "forage"},
-            "vine": {"source": "dense trees", "infinite": True, "action": "forage"},
+            "leaves": {"source": "dense trees", "infinite": True, "action": "gather"},
+            "vine": {"source": "dense trees", "infinite": True, "action": "gather"},
             "large tree": {"source": "dense trees", "qty": 2, "capacity": 2, "regen_minutes": 14 * 1440, "regen_progress": 0, "action": "hew log"},
             "palm fronds": {"source": "dense trees", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "cut palm fronds"},
             "lemongrass": {"source": "dense trees", "qty": 1, "capacity": 1, "regen_minutes": 5 * 1440, "regen_progress": 0, "action": "harvest lemongrass"},
@@ -1792,26 +2190,27 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["brimstone vent", "stone outcrops", "hot ground"],
         "resources": {
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
-            "ash": {"source": "hot ground", "infinite": True, "action": "forage"},
+            "ash": {"source": "hot ground", "infinite": True, "action": "gather"},
         },
     },
     "highland hole": {
         "features": ["hole", "high cliffs", "stone outcrops"],
         "resources": {
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
+            "skeleton": {"source": "skeleton", "qty": 2, "capacity": 2, "regen_progress": 0, "action": "collect bone splinters"},
         },
     },
     "enclosure": {
         "features": ["fence", "trampled grass"],
         "resources": {
-            "sticks": {"source": "fence", "infinite": True, "action": "forage"},
+            "sticks": {"source": "fence", "infinite": True, "action": "gather"},
         },
     },
     "raft": {
         "features": ["sea", "floating debris"],
         "resources": {
             "unsafe water": {"source": "sea", "infinite": True, "action": "gather"},
-            "sticks": {"source": "floating debris", "infinite": True, "action": "forage"},
+            "sticks": {"source": "floating debris", "infinite": True, "action": "gather"},
         },
     },
     "bat cave": {
@@ -1823,7 +2222,7 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
     "cellar": {
         "features": ["darkness", "storage shelves"],
         "resources": {
-            "sticks": {"source": "storage shelves", "infinite": True, "action": "forage"},
+            "sticks": {"source": "storage shelves", "infinite": True, "action": "gather"},
         },
     },
     "dark cave": {
@@ -1837,20 +2236,20 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
         "features": ["darkness", "stone outcrops", "dry grass"],
         "resources": {
             "stones": {"source": "stone outcrops", "infinite": True, "action": "gather"},
-            "sticks": {"source": "dry grass", "infinite": True, "action": "forage"},
+            "sticks": {"source": "dry grass", "infinite": True, "action": "gather"},
         },
     },
     "macaque den": {
         "features": ["darkness", "dense trees", "debris"],
         "resources": {
             "sticks": {"source": "debris", "infinite": True, "action": "gather"},
-            "leaves": {"source": "dense trees", "infinite": True, "action": "forage"},
+            "leaves": {"source": "dense trees", "infinite": True, "action": "gather"},
         },
     },
     "mud hut": {
         "features": ["shelter walls", "storage shelves"],
         "resources": {
-            "sticks": {"source": "storage shelves", "infinite": True, "action": "forage"},
+            "sticks": {"source": "storage shelves", "infinite": True, "action": "gather"},
         },
     },
     "plane crash": {
@@ -1870,7 +2269,7 @@ AREA_DEFS: dict[str, dict[str, Any]] = {
     "shed": {
         "features": ["shelter walls", "storage shelves"],
         "resources": {
-            "sticks": {"source": "storage shelves", "infinite": True, "action": "forage"},
+            "sticks": {"source": "storage shelves", "infinite": True, "action": "gather"},
         },
     },
     "stone hut": {
@@ -1967,7 +2366,6 @@ DISCOVERY_ORDER = [
     "acid lake",
     "highland hole",
     "enclosure",
-    "raft",
     "bat cave",
     "cellar",
     "dark cave",
@@ -1994,7 +2392,7 @@ AREA_NEIGHBORS = {
     "acid lake": ["volcano"],
     "atoll": ["raft"],
     "bay": ["beach", "jungle", "mangrove forest"],
-    "beach": ["bay", "jungle outskirts", "rocks"],
+    "beach": ["bay", "jungle outskirts", "rocks", "raft"],
     "bird rock": ["desolate beach", "rocks"],
     "crystal chamber": ["flooded chamber"],
     "damp chamber": ["dark cave", "wetlands"],
@@ -2015,6 +2413,7 @@ AREA_NEIGHBORS = {
     "medium chamber": ["darkness", "low chamber"],
     "narrow tunnel": ["damp chamber"],
     "plane crash": ["wetlands"],
+    "raft": ["beach", "atoll"],
     "rocks": ["sea cave", "beach", "bird rock"],
     "secret cove": ["flooded chamber", "bird rock", "jungle highlands"],
     "secret valley": ["deep jungle"],
@@ -2095,7 +2494,6 @@ AREA_EXPLORE_ITEMS = {
     "wetlands": [("sticks_1_limit", 5000, "sticks", 1, 2, 1), ("stone_5_limit", 1000, "stones", 1, 1, 5), ("heavy_stone_3_limit", 400, "heavy stone", 1, 1, 3), (300, "assorted mushrooms", 1, 2), (600, "leaves", 3, 6), (600, "long stick", 1, 1), (550, "palm bush", 1, 1), (1000, "sticks", 1, 2), (800, "wood", 1, 1)],
 }
 
-DEFAULT_FORAGE_OUTPUTS = ["coconut", "sticks", "leaves", "stones", "vine", "bandage leaves"]
 WATER_LOCATIONS = {
     "atoll",
     "beach",
