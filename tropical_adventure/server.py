@@ -7,7 +7,7 @@ import signal
 from pathlib import Path
 from typing import Any
 
-from .game import cancel_action, disconnect_player, join_player, new_world, start_action, tick_world, world_snapshot
+from .game import cancel_action, disconnect_player, join_player, new_world, start_action, tick_world_with_sleep_skip, world_snapshot
 from .models import log_event
 from .persistence import _save_world_data, load_world, save_world
 from .protocol import read_json_line, write_json_line
@@ -59,7 +59,7 @@ class GameServer:
         while True:
             await asyncio.sleep(self.tick_interval)
             async with self._lock:
-                day_changed = tick_world(self.world)
+                day_changed = tick_world_with_sleep_skip(self.world)
             if day_changed:
                 try:
                     await self.save_current_world()
@@ -144,8 +144,6 @@ class GameServer:
                 should_save = True
             elif kind == "exit":
                 should_save = True
-            elif kind == "inspect":
-                response = {"type": "snapshot", "snapshot": world_snapshot(self.world, player_name)}
             else:
                 response = {"type": "error", "message": f"unknown message type: {kind}"}
 
