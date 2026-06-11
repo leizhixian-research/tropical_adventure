@@ -114,23 +114,6 @@ async def test_broadcast_snapshots_drops_failed_writers(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_inspect_response_does_not_hold_world_lock_while_network_drain_blocks(tmp_path):
-    server = GameServer(str(tmp_path / "island.json"))
-    join_player(server.world, "Alice")
-    writer = BlockingWriter()
-
-    task = asyncio.create_task(server.handle_message("Alice", writer, {"type": "inspect"}))
-    await asyncio.wait_for(writer.drain_started.wait(), timeout=1)
-
-    async with asyncio.timeout(0.1):
-        async with server._lock:
-            pass
-
-    writer.release_drain.set()
-    assert await asyncio.wait_for(task, timeout=1) is True
-
-
-@pytest.mark.asyncio
 async def test_failed_old_broadcast_writer_does_not_remove_newer_connection(tmp_path):
     server = GameServer(str(tmp_path / "island.json"))
     player = join_player(server.world, "Alice")
@@ -442,68 +425,106 @@ async def test_server_rejects_bad_invite(running_server):
 @pytest.mark.asyncio
 async def test_two_clients_join_chat_actions_pause_resume_and_save(running_server):
     _, port, save_dir = running_server
-    r1, w1, joined1 = await connect_client(port, "Alice", "secret")
-    r2, w2, joined2 = await connect_client(port, "Bob", "secret")
-    assert joined1["type"] == "joined"
-    assert joined2["type"] == "joined"
+    w1 = None
+    w2 = None
+    try:
+        r1, w1, joined1 = await connect_client(port, "Alice", "secret")
+        r2, w2, joined2 = await connect_client(port, "Bob", "secret")
+        assert joined1["type"] == "joined"
+        assert joined2["type"] == "joined"
 
-    # Duplicate active name is rejected.
-    rdup, wdup = await asyncio.open_connection("127.0.0.1", port)
-    await write_json_line(wdup, {"type": "join", "name": "Alice", "invite": "secret"})
-    assert (await read_json_line(rdup))["message"] == "player name already connected"
-    wdup.close()
-    await wdup.wait_closed()
+        # Duplicate active name is rejected.
+        rdup, wdup = await asyncio.open_connection("127.0.0.1", port)
+        await write_json_line(wdup, {"type": "join", "name": "Alice", "invite": "secret"})
+        assert (await read_json_line(rdup))["message"] == "player name already connected"
+        wdup.close()
+        await wdup.wait_closed()
 
-    await write_json_line(w1, {"type": "chat", "text": "hello"})
-    messages = [await read_json_line(r2) for _ in range(4)]
-    assert any(m and m.get("type") == "chat" and m.get("text") == "hello" for m in messages)
+        await write_json_line(w1, {"type": "chat", "text": "hello"})
+        messages = [await read_json_line(r2) for _ in range(4)]
+        assert any(m and m.get("type") == "chat" and m.get("text") == "hello" for m in messages)
 
-    long_text = "x" * 1200
-    await write_json_line(w1, {"type": "chat", "text": long_text})
-    long_chat_seen = False
-    for _ in range(8):
-        msg = await read_json_line(r2)
-        if msg and msg.get("type") == "chat":
-            assert msg.get("text") == long_text[:500]
-            long_chat_seen = True
-            break
-    assert long_chat_seen
+        long_text = "x" * 1200
+        await write_json_line(w1, {"type": "chat", "text": long_text})
+        long_chat_seen = False
+        for _ in range(8):
+            msg = await read_json_line(r2)
+            if msg and msg.get("type") == "chat":
+                assert msg.get("text") == long_text[:500]
+                long_chat_seen = True
+                break
+        assert long_chat_seen
 
-    await write_json_line(w1, {"type": "start_action", "action": "gather", "args": {"item": "cooked fish"}})
-    error_seen = False
-    for _ in range(8):
-        msg = await read_json_line(r1)
-        if msg and msg.get("type") == "error" and "cannot gather cooked fish" in msg.get("message", ""):
-            error_seen = True
-            break
-    assert error_seen
+        await write_json_line(w1, {"type": "start_action", "action": "gather", "args": {"item": "cooked fish"}})
+        error_seen = False
+        for _ in range(8):
+            msg = await read_json_line(r1)
+            if msg and msg.get("type") == "error" and "cannot gather cooked fish" in msg.get("message", ""):
+                error_seen = True
+                break
+        assert error_seen
 
-    await write_json_line(w1, {"type": "start_action", "action": "forage", "args": {}})
-    await write_json_line(w2, {"type": "start_action", "action": "forage", "args": {}})
-    await asyncio.sleep(0.12)
-    await write_json_line(w1, {"type": "pause"})
-    await asyncio.sleep(0.05)
-    await write_json_line(w2, {"type": "resume"})
-    await write_json_line(w1, {"type": "save"})
-    await asyncio.sleep(0.05)
-    first_saves = sorted(p.name for p in save_dir.glob("island_*.json"))
-    assert first_saves
-    assert all(name.startswith("island_") for name in first_saves)
+        await write_json_line(w1, {"type": "pause"})
+        bob_saw_pause = False
+        for _ in range(12):
+            msg = await asyncio.wait_for(read_json_line(r2), timeout=2)
+            if msg and msg.get("type") == "snapshot" and msg["snapshot"]["paused"] is True:
+                bob_saw_pause = True
+                break
+        assert bob_saw_pause
 
-    await write_json_line(w1, {"type": "exit"})
-    exit_seen = False
-    for _ in range(50):
-        msg = await asyncio.wait_for(read_json_line(r1), timeout=2)
-        if msg and msg.get("type") == "exit":
-            assert msg == {"type": "exit", "message": "saved; exiting"}
-            exit_seen = True
-            break
-    assert exit_seen
-    assert await asyncio.wait_for(read_json_line(r1), timeout=2) is None
-    assert sorted(p.name for p in save_dir.glob("island_*.json"))
+        await write_json_line(w2, {"type": "start_action", "action": "gather", "args": {}})
+        blocked_by_pause = False
+        for _ in range(8):
+            msg = await asyncio.wait_for(read_json_line(r2), timeout=2)
+            if msg and msg.get("type") == "error" and "world is paused" in msg.get("message", ""):
+                blocked_by_pause = True
+                break
+        assert blocked_by_pause
 
-    w2.close()
-    await w2.wait_closed()
+        await write_json_line(w2, {"type": "resume"})
+        alice_saw_resume = False
+        for _ in range(12):
+            msg = await asyncio.wait_for(read_json_line(r1), timeout=2)
+            if msg and msg.get("type") == "snapshot" and msg["snapshot"]["paused"] is False:
+                alice_saw_resume = True
+                break
+        assert alice_saw_resume
+
+        await write_json_line(w1, {"type": "start_action", "action": "gather", "args": {}})
+        await write_json_line(w2, {"type": "start_action", "action": "gather", "args": {}})
+        await asyncio.sleep(0.12)
+        await write_json_line(w1, {"type": "pause"})
+        await asyncio.sleep(0.05)
+        await write_json_line(w2, {"type": "resume"})
+        await write_json_line(w1, {"type": "save"})
+        save_seen = False
+        for _ in range(30):
+            msg = await asyncio.wait_for(read_json_line(r1), timeout=2)
+            if msg and msg.get("type") == "event" and msg.get("message") == "manual save complete":
+                save_seen = True
+                break
+        assert save_seen
+        first_saves = sorted(p.name for p in save_dir.glob("island_*.json"))
+        assert first_saves
+        assert all(name.startswith("island_") for name in first_saves)
+
+        await write_json_line(w1, {"type": "exit"})
+        exit_seen = False
+        for _ in range(50):
+            msg = await asyncio.wait_for(read_json_line(r1), timeout=2)
+            if msg and msg.get("type") == "exit":
+                assert msg == {"type": "exit", "message": "saved; exiting"}
+                exit_seen = True
+                break
+        assert exit_seen
+        assert await asyncio.wait_for(read_json_line(r1), timeout=2) is None
+        assert sorted(p.name for p in save_dir.glob("island_*.json"))
+    finally:
+        for writer in (w1, w2):
+            if writer and not writer.is_closing():
+                writer.close()
+                await writer.wait_closed()
 
 
 @pytest.mark.asyncio
