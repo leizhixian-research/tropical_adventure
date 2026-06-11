@@ -11,13 +11,20 @@ from .content import (
     ACTION_DESCRIPTIONS as CONTENT_ACTION_DESCRIPTIONS,
     ACTION_NAMES_ZH as CONTENT_ACTION_NAMES_ZH,
     LOCATION_CARD_DEFS,
+    RAFT_BUILD_STAGES,
     RAFT_EVENT_PASSING_SHIP,
     RAFT_RESCUE_DISTANCE,
     SPOIL_MINUTES,
     DEFAULT_ITEM_WEIGHT,
     ITEM_WEIGHTS,
+    RAIN_COUNTER_MAX,
+    RAIN_COUNTER_START,
+    TINDER_LIGHTING_ACTIONS,
+    TINDER_ITEMS,
+    WEATHER_ALIASES,
+    WEATHER_DEFS,
 )
-from .game import ACTION_DURATIONS
+from .game import ACTION_DURATIONS, HAND_CARRIED_STORAGE_KINDS, PICKABLE_STORAGE_KINDS
 from .models import MAX_EVENT_LOG, PLAYER_STAT_KEYS
 from .protocol import read_json_line, write_json_line
 
@@ -33,7 +40,7 @@ except Exception:  # pragma: no cover - allows protocol tests without textual in
     Horizontal = VerticalScroll = Input = Static = None  # type: ignore
 
 
-CLIENT_COMMANDS = ["/cancel", "/exit", "/inspect", "/pause", "/resume", "/save"]
+CLIENT_COMMANDS = ["/cancel", "/exit", "/pause", "/resume", "/save"]
 COMMAND_HELP_VISIBLE_MATCHES = 20
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 COMMAND_DESCRIPTIONS = {
@@ -50,13 +57,11 @@ COMMAND_DESCRIPTIONS = {
         "exit": "save and exit the client",
         "explore": "search the current area for new locations",
         "fish": "catch fish in coastal fishing spots",
-        "forage": "look for edible or medicinal plants",
         "gather": "collect nearby natural materials",
-        "inspect": "request the latest world snapshot",
         "leisure": "take a morale-restoring break",
         "move": "travel to a discovered location",
         "pause": "pause the world simulation",
-        "pick up": "pick up an item from the ground",
+        "pick up": "pick up an item from the current scene",
         "rest": "recover fatigue",
         "resume": "resume the world simulation",
         "save": "save the world",
@@ -79,13 +84,11 @@ COMMAND_DESCRIPTIONS = {
         "exit": "保存并退出客户端",
         "explore": "搜索当前区域的新地点",
         "fish": "在沿海渔点捕鱼",
-        "forage": "觅食，寻找可食用或药用植物",
         "gather": "收集附近的自然材料",
-        "inspect": "请求最新世界快照",
         "leisure": "放松休闲以恢复士气",
         "move": "前往已发现地点",
         "pause": "暂停世界模拟",
-        "pick up": "从地上捡起物品",
+        "pick up": "从当前位置捡起物品",
         "rest": "恢复疲劳",
         "resume": "恢复世界模拟",
         "save": "保存世界",
@@ -121,6 +124,7 @@ OBJECT_NAMES_ZH = {
     "highland hole": "高地洞口",
     "enclosure": "围栏",
     "raft": "木筏",
+    "raft frame": "木筏框架",
     "bat cave": "蝙蝠洞",
     "cellar": "地窖",
     "dark cave": "黑暗洞穴",
@@ -182,26 +186,16 @@ OBJECT_NAMES_ZH = {
     "dry grass": "干草",
     "wild yams": "野山药",
     "hot ground": "热地面",
-    "hole": "洞口",
     "fence": "围栏",
     "trampled grass": "踩踏草地",
     "floating debris": "漂浮残骸",
-    "darkness": "黑暗",
-    "bat colony": "蝙蝠群",
     "storage shelves": "储物架",
     "cave puddle": "洞穴水洼",
-    "debris": "残骸",
     "shelter walls": "遮蔽墙",
     "crystals": "水晶",
-    "shaft": "竖井",
-    "narrow passage": "狭窄通道",
-    "copper vein": "铜矿脉",
     "dry mud": "干泥",
-    "skeleton": "骸骨",
-    "wall scratchings": "墙上刻痕",
-    "brimstone vent": "硫磺喷口",
-    "seawater": "海水",
     "fish": "鱼",
+    "fire remnants": "火堆残迹",
     "unsafe water": "不安全的水",
     "clean water": "净水",
     "raw fish": "生鱼",
@@ -210,7 +204,11 @@ OBJECT_NAMES_ZH = {
     "bandage leaves": "绷带叶",
     "ash": "灰烬",
     "charcoal": "木炭",
+    "bird bones": "鸟骨",
+    "bone hook": "骨钩",
+    "bone splinters": "骨片",
     "coconut": "椰子",
+    "coconut palm": "结果椰树",
     "sticks": "树枝",
     "leaves": "叶子",
     "vine": "藤条",
@@ -263,15 +261,27 @@ OBJECT_NAMES_ZH.update(
         "coconut meat": "椰肉",
         "coconut shell": "椰壳",
         "coconut fish": "椰子鱼",
+        "conch": "海螺",
+        "conch meat": "海螺肉",
+        "cooked conch meat": "熟海螺肉",
+        "crushed conch": "碎海螺壳",
         "sago cake": "西米糕",
         "yam curry": "山药咖喱",
         "fried puffballs": "炒马勃菌",
+        "bow drill": "弓钻",
         "fiber cord": "纤维绳",
+        "hand drill": "手钻",
+        "lit tinder": "点燃的火绒",
+        "lit torch": "点燃的火把",
+        "torch": "火把",
         "wood shavings": "木屑",
         "long stick": "长树枝",
         "dried fish": "鱼干",
         "raw meat": "生肉",
         "cooked meat": "熟肉",
+        "dry leaves": "干叶",
+        "dry leaf litter": "干落叶层",
+        "dry palm litter": "干棕榈叶层",
         "prawns": "虾",
         "crab": "螃蟹",
         "seaweed": "海藻",
@@ -283,6 +293,13 @@ OBJECT_NAMES_ZH.update(
         "obsidian": "黑曜石",
         "sulphurous stone": "硫磺石",
         "pretty seashells": "漂亮贝壳",
+        "feathers": "羽毛",
+        "fish bait": "鱼饵",
+        "fishing line": "鱼线",
+        "fishing rod": "鱼竿",
+        "flesh skin": "刮净兽皮",
+        "fresh skin": "新鲜兽皮",
+        "fleshed skin": "刮净兽皮",
         "guano": "鸟粪",
         "bugs": "虫子",
         "assorted mushrooms": "混合蘑菇",
@@ -337,6 +354,8 @@ OBJECT_NAMES_ZH.update(
         "coffee beans": "咖啡豆",
         "roasted coffee beans": "烘焙咖啡豆",
         "coffee": "咖啡",
+        "cinchona bark": "金鸡纳树皮",
+        "cinchona tree": "金鸡纳树",
         "chilli plant": "辣椒株",
         "chillies": "辣椒",
         "jasmine flowers": "茉莉花",
@@ -344,6 +363,8 @@ OBJECT_NAMES_ZH.update(
         "assorted mushrooms patch": "混合蘑菇丛",
         "puffballs patch": "马勃菌丛",
         "puffballs": "马勃菌",
+        "dried cinchona bark": "干金鸡纳树皮",
+        "quinine powder": "奎宁粉",
         "magic mushroom patch": "迷幻菇丛",
         "magic mushrooms": "迷幻菇",
         "stone axe": "石斧",
@@ -387,8 +408,8 @@ OBJECT_NAMES_ZH.update(
         "salted fish": "咸鱼",
         "salted meat": "咸肉",
         "signaling mirror": "信号镜",
-        "copper": "铜",
         "dry puddle dirt": "干水洼土",
+        "needle": "针",
     }
 )
 ZH_ALIASES = {value: key for key, value in OBJECT_NAMES_ZH.items()}
@@ -409,6 +430,8 @@ FEATURE_DESCRIPTIONS = {
         "palm fronds": "broad fronds useful for cover",
         "rain puddles": "rain-fed puddles of unsafe water",
         "sago palms": "wetland palms with useful leaves",
+        "dry leaf litter": "dry leaves under forest cover",
+        "dry palm litter": "dry palm leaves under the trees",
         "deep shade": "cool dim cover under the canopy",
         "acid shore": "caustic mineral shore",
         "seagull nests": "noisy nests on exposed rock",
@@ -457,6 +480,8 @@ FEATURE_DESCRIPTIONS = {
         "palm fronds": "可用于遮蔽的大棕榈叶",
         "rain puddles": "雨水形成的未处理水洼",
         "sago palms": "湿地里的西米棕榈",
+        "dry leaf litter": "林下干燥落叶",
+        "dry palm litter": "树下干燥棕榈叶",
         "deep shade": "树冠下阴凉昏暗的遮蔽",
         "acid shore": "带腐蚀性的矿物湖岸",
         "seagull nests": "裸岩上吵闹的海鸥巢",
@@ -524,12 +549,15 @@ PLACED_DESCRIPTIONS["en"].update(
         "well": "a dug source of unsafe groundwater",
         "cistern": "a sealed underground rainwater store",
         "basket": "a small woven storage basket",
+        "woven backpack": "a worn storage basket with rope straps",
         "storage chest": "a heavy chest for base storage",
         "supply chest": "a reinforced chest for food and travel supplies",
         "shed": "woven palm shelter with storage space",
         "mud hut": "mud-brick shelter with good weather protection",
         "cellar": "cool underground storage room",
         "stone hut": "storm-resistant stone shelter",
+        "raft frame": "unfinished escape raft frame",
+        "raft": "seaworthy escape raft",
     }
 )
 PLACED_DESCRIPTIONS["zh"].update(
@@ -548,17 +576,21 @@ PLACED_DESCRIPTIONS["zh"].update(
         "well": "会缓慢蓄积不安全地下水的水井",
         "cistern": "密封的地下雨水储仓",
         "basket": "小型棕榈编织储物篮",
+        "woven backpack": "带绳背带的随身储物背篓",
         "storage chest": "沉重的基地储物箱",
         "supply chest": "适合食物和旅行补给的加固箱",
         "shed": "带储物空间的棕榈棚屋",
         "mud hut": "能良好遮风雨的泥砖屋",
         "cellar": "阴凉的地下储藏室",
         "stone hut": "能抵御风暴的石屋庇护",
+        "raft frame": "尚未完成的逃生木筏框架",
+        "raft": "可驶离小岛的逃生木筏",
     }
 )
 ITEM_DESCRIPTIONS = {
     "en": {
         "coconut": "fresh food and drink",
+        "coconut palm": "climbable palm with reachable coconuts",
         "sticks": "dry fuel and building material",
         "leaves": "broad leaves for crafting",
         "vine": "flexible natural cordage",
@@ -577,6 +609,8 @@ ITEM_DESCRIPTIONS = {
         "crab": "small coastal crab",
         "prawns": "small shellfish",
         "raw meat": "fresh trap meat that should be cooked",
+        "raw fish": "fresh fish that should be cooked or preserved",
+        "cooked fish": "cooked fish ready to eat",
         "cooked meat": "cooked meat from a small catch",
         "assorted mushrooms": "mixed wild mushrooms",
         "sharp stone": "a chipped cutting tool",
@@ -588,6 +622,7 @@ ITEM_DESCRIPTIONS = {
     },
     "zh": {
         "coconut": "新鲜的食物和饮水",
+        "coconut palm": "可攀爬并采到椰子的棕榈树",
         "sticks": "干燥的燃料和建材",
         "leaves": "可用于制作的宽叶",
         "vine": "柔韧的天然绳材",
@@ -606,12 +641,27 @@ ITEM_DESCRIPTIONS["en"].update(
         "coconut meat": "white coconut flesh",
         "coconut shell": "a small natural cup",
         "coconut fish": "rich fish cooked with coconut and greens",
+        "conch": "large shellfish with meat inside",
+        "conch meat": "rubbery raw mollusk meat that should be cooked",
+        "cooked conch meat": "cooked but still chewy mollusk meat",
+        "crushed conch": "crushed shell temper for clay or quicklime",
         "sago cake": "soft steamed sago and coconut cake",
         "yam curry": "warm yam curry with coconut and chilies",
         "fried puffballs": "savory cooked wild mushrooms",
+        "bird bones": "small bones that can be carved into hooks",
+        "bone hook": "small carved hook for fishing gear",
+        "bone splinters": "sharp bone pieces for hooks and fine craft",
+        "feathers": "loose bird feathers for tinder and fish bait",
+        "fish bait": "artificial bait that improves line fishing",
+        "fishing line": "simple cord and hook for sea fishing",
+        "fishing rod": "sturdier fishing tool that improves line fishing",
         "fiber cord": "twisted plant fiber cordage",
         "rope": "thick braided cord for heavy construction",
+        "bow drill": "faster fire-starting tool that is gentler on your hands",
         "digging stick": "a stone-tipped digging tool",
+        "hand drill": "simple fire-starting tool for tinder",
+        "lit tinder": "small burning tinder that can start a fire",
+        "lit torch": "portable flame for night travel and dark places",
         "sand": "clean sand for mortar and filters",
         "quicklime": "caustic lime for mortar and advanced crafting",
         "mortar": "wet stone-building mortar",
@@ -619,6 +669,7 @@ ITEM_DESCRIPTIONS["en"].update(
         "clay vase": "large fired clay water container",
         "long stick": "straight pole for frames and racks",
         "dried fish": "preserved fish that lasts longer",
+        "dry leaves": "dry leaf litter that works well as tinder",
         "prawns": "small tide-pool shellfish",
         "crab": "small coastal crab",
         "seaweed": "edible sea greens",
@@ -643,36 +694,52 @@ ITEM_DESCRIPTIONS["en"].update(
         "copper jar": "small sealed copper jar that can also cook",
         "log": "heavy building log for larger structures",
         "leather": "worked hide for durable construction",
+        "fresh skin": "fresh hide that should be scraped before it rots",
+        "fleshed skin": "scraped hide curing into leather",
         "palm weave": "woven palm mat for baskets, chests, and roofs",
         "basket": "woven palm basket for small storage",
         "woven backpack": "rope-backed woven basket for carrying supplies",
+        "torch": "unlit portable torch with reusable fuel",
         "calcite crystal": "pale crystal from a cave",
         "aloe vera": "a living aloe plant with soothing leaves",
         "aloe vera leaf": "cool gel-filled leaf for skin care",
         "aloe gel": "processed soothing gel for burns, bites, and sun",
         "lemongrass": "edible citrus grass that lightly repels insects",
+        "ginger plant": "wetland plant with medicinal roots",
         "ginger": "sharp medicinal root for stomach trouble",
         "ginger tea": "warm tea that settles nausea and digestion",
+        "spider lily": "medicinal lily with antibiotic leaves",
         "spider lily leaves": "medicinal leaves for antibiotic tea",
         "spider lily tea": "bitter tea that supports fever and infection recovery",
+        "snakegrass patch": "patch of fibrous grass for cordage and repellent",
         "snake grass": "fibrous grass for cordage and repellent",
         "snakegrass seeds": "small seeds from harvested snakegrass",
         "bug repellent": "plant salve that keeps biting insects away",
         "yam": "raw wild tuber that must be prepared",
         "cooked yam": "safe cooked wild yam",
         "banana": "sweet quick fruit",
+        "nipa palm": "mangrove palm with edible fruit",
         "nipa fruit": "mangrove palm fruit with edible seeds inside",
         "nipa seeds": "soft edible nipa palm seeds",
+        "coffee bush": "highland bush with coffee berries",
         "coffee berries": "fresh berries with beans inside",
         "coffee beans": "unroasted coffee beans",
         "roasted coffee beans": "roasted beans ready for brewing",
         "coffee": "bitter drink that fights fatigue",
+        "cinchona bark": "fresh medicinal bark that can be dried for quinine",
+        "dried cinchona bark": "dry bark ready to grind into quinine powder",
+        "quinine powder": "bitter antimalarial medicine with stomach side effects",
+        "chilli plant": "grassland plant with hot peppers",
         "chillies": "hot peppers with a harsh stimulant bite",
         "jasmine flowers": "fragrant flowers for relaxing tea",
         "jasmine tea": "gentle tea for stress and morale",
+        "assorted mushrooms patch": "mixed wild mushroom patch",
         "puffballs": "mild edible wild mushrooms",
+        "puffballs patch": "patch of edible puffball mushrooms",
+        "magic mushroom patch": "patch of psychoactive mushrooms",
         "magic mushrooms": "psychoactive mushrooms that disturb clarity",
         "stone axe": "a lashed stone chopping tool",
+        "sago palm": "wetland palm with starch-rich pith",
         "felled sago palm": "a cut palm ready to split for starch",
         "palm fronds": "broad palm leaves from a felled tree",
         "sago seeds": "seeds from a harvested sago palm",
@@ -698,6 +765,17 @@ ITEM_DESCRIPTIONS["en"].update(
         "salted fish": "salt-cured fish that lasts much longer",
         "salted meat": "salt-cured meat that lasts much longer",
         "signaling mirror": "polished emergency mirror for catching a ship's attention",
+        "banana tree": "fruiting tree with a harvestable hand of bananas",
+        "cinchona tree": "medicinal tree with bark for quinine",
+        "dry puddle dirt": "loose dirt in a dried puddle",
+        "large tree": "tree large enough to hew into a log",
+        "mud deposit": "workable wet mud deposit",
+        "needle": "sewing needle for leather and raft work",
+        "seagull nest": "exposed nest with feathers and scraps",
+        "skeleton": "old bones that can be worked into hooks",
+        "storage chest": "heavy built chest for base storage",
+        "supply chest": "reinforced chest for food and travel supplies",
+        "wild yam": "wild tuber vine with toxic roots",
     }
 )
 ITEM_DESCRIPTIONS["zh"].update(
@@ -716,18 +794,36 @@ ITEM_DESCRIPTIONS["zh"].update(
         "crab": "小型海岸螃蟹",
         "prawns": "小型贝类食物",
         "raw meat": "最好烤熟的新鲜陷阱肉",
+        "raw fish": "最好烤熟或保存的新鲜鱼",
+        "cooked fish": "可以直接食用的熟鱼",
         "cooked meat": "烤熟的小型猎物肉",
+        "dry leaves": "适合点火的干燥落叶",
         "assorted mushrooms": "混合野生蘑菇",
         "coconut water": "封在壳里的清甜饮水",
         "coconut meat": "白色椰肉",
         "coconut shell": "天然小杯",
         "coconut fish": "用椰子和蔬菜煮出的浓郁鱼料理",
+        "conch": "内含可食肉的大海螺",
+        "conch meat": "有韧性的生贝肉，最好先烤熟",
+        "cooked conch meat": "烤熟但仍有嚼劲的贝肉",
+        "crushed conch": "可作陶土调和料或烧生石灰的碎贝壳",
         "sago cake": "用西米和椰肉蒸成的软糕",
         "yam curry": "加入椰肉和辣椒的热山药咖喱",
         "fried puffballs": "炒熟的鲜香野蘑菇",
+        "bird bones": "可削成鱼钩的小鸟骨",
+        "bone hook": "用于钓具的小骨钩",
+        "bone splinters": "可制作鱼钩和细工的锋利骨片",
+        "feathers": "可作火绒和鱼饵的散落羽毛",
+        "fish bait": "能提高钓鱼上钩率的人工鱼饵",
+        "fishing line": "由绳和鱼钩做成的简易钓线",
+        "fishing rod": "更结实、上钩率更好的钓竿",
         "fiber cord": "搓成的植物纤维绳",
         "rope": "用于大型建造的粗编绳",
+        "bow drill": "更快点火且更省手的取火工具",
         "digging stick": "带石刃的挖掘工具",
+        "hand drill": "用于点燃火绒的简易取火工具",
+        "lit tinder": "可用来引燃火堆的小团火绒",
+        "lit torch": "可用于夜间行走和黑暗地点的随身火光",
         "sand": "可用于砂浆和过滤的干净沙子",
         "quicklime": "可制作砂浆和进阶材料的生石灰",
         "mortar": "用于石质建筑的湿砂浆",
@@ -759,9 +855,12 @@ ITEM_DESCRIPTIONS["zh"].update(
         "copper jar": "可做饭的小型密封铜罐",
         "log": "用于大型结构的沉重原木",
         "leather": "经过处理的耐用皮革",
+        "fresh skin": "需要刮净否则会腐坏的新鲜兽皮",
+        "fleshed skin": "正在风干成皮革的刮净兽皮",
         "palm weave": "可用于篮子、箱子和屋顶的棕榈编片",
         "basket": "可小量储物的棕榈编篮",
         "woven backpack": "带绳背带、可携带补给的编织背篓",
+        "torch": "未点燃的可携带火把，保留剩余燃料",
         "plastic bottle": "轻便的容器材料",
         "aloe vera leaf": "含有清凉凝胶的护肤叶片",
         "aloe gel": "处理好的舒缓凝胶，可护理晒伤、虫咬和烧伤",
@@ -785,6 +884,9 @@ ITEM_DESCRIPTIONS["zh"].update(
         "coffee beans": "还没烘焙的咖啡豆",
         "roasted coffee beans": "可用来冲煮的烘焙咖啡豆",
         "coffee": "苦味饮品，可以暂时抵抗疲劳",
+        "cinchona bark": "可晒干制奎宁的药用鲜树皮",
+        "dried cinchona bark": "可磨成奎宁粉的干树皮",
+        "quinine powder": "苦味抗疟药，可能刺激肠胃",
         "chilli plant": "结辣椒的草地植物",
         "chillies": "刺激性很强的辣椒",
         "jasmine flowers": "芳香的茉莉花，可泡安神茶",
@@ -821,6 +923,18 @@ ITEM_DESCRIPTIONS["zh"].update(
         "salted fish": "更耐放的腌咸鱼",
         "salted meat": "更耐放的腌咸肉",
         "signaling mirror": "可向船只反光示意的应急镜",
+        "banana tree": "长着可采香蕉串的果树",
+        "cinchona tree": "树皮可制奎宁的药用树",
+        "dry puddle dirt": "干水洼里的松土",
+        "ginger plant": "根部有药用价值的湿地植物",
+        "large tree": "可修整成原木的大树",
+        "mud deposit": "可挖取加工的湿泥堆",
+        "needle": "用于缝皮革和木筏部件的针",
+        "seagull nest": "有羽毛和零碎材料的裸岩鸟巢",
+        "skeleton": "可加工成鱼钩的旧骨头",
+        "storage chest": "用于基地储物的沉重木箱",
+        "supply chest": "适合食物和旅行补给的加固箱",
+        "wild yam": "藏有有毒根茎的野山药藤",
     }
 )
 ACTION_NAMES_ZH = {
@@ -835,7 +949,6 @@ ACTION_NAMES_ZH = {
     "eat": "进食",
     "explore": "探索",
     "fish": "捕鱼",
-    "forage": "觅食",
     "gather": "收集",
     "leisure": "休闲",
     "move": "移动",
@@ -850,6 +963,15 @@ ACTION_NAMES_ZH = {
 ACTION_NAMES_ZH.update(CONTENT_ACTION_NAMES_ZH)
 COMMAND_DESCRIPTIONS["en"].update(CONTENT_ACTION_DESCRIPTIONS["en"])
 COMMAND_DESCRIPTIONS["zh"].update(CONTENT_ACTION_DESCRIPTIONS["zh"])
+WEATHER_NAMES_ZH = {
+    "clear": "晴朗",
+    "partially cloudy": "少云",
+    "cloudy": "多云",
+    "rain": "雨",
+    "light rain": "小雨",
+    "heavy rain": "大雨",
+    "storm": "风暴",
+}
 TRANSLATIONS = {
     "en": {
         "players": "Players",
@@ -861,6 +983,9 @@ TRANSLATIONS = {
         "outcome": "Outcome",
         "win": "Victory",
         "loss": "Defeat",
+        "escape_path": "Escape",
+        "death_path": "Death",
+        "raft_build": "Raft build",
         "raft_voyage": "Raft voyage",
         "passing_ship": "Passing ship",
         "thirst": "thirst",
@@ -907,6 +1032,9 @@ TRANSLATIONS = {
         "heat_balance": "heat balance",
         "cold_balance": "cold balance",
         "blood_pressure_stability": "blood pressure",
+        "parasite_control": "parasite control",
+        "malaria_resistance": "malaria resistance",
+        "infection_control": "infection control",
         "fever_control": "fever control",
         "stomach_stability": "stomach stability",
         "digestion": "digestion",
@@ -954,6 +1082,13 @@ TRANSLATIONS = {
         "mushroom_appetite": "mushroom appetite",
         "yam_appetite": "yam appetite",
         "weather": "weather",
+        "season": "season",
+        "rain_counter": "rain counter",
+        "rain_value": "rain",
+        "sun_strength": "sun",
+        "tide": "tide",
+        "high_tide": "high",
+        "low_tide": "low",
         "light": "light",
         "paused": "paused",
         "none": "none",
@@ -964,7 +1099,7 @@ TRANSLATIONS = {
         "survivor_here": "survivor here",
         "commands": "Commands",
         "no_commands": "No matching commands",
-        "placeholder": "chat, /forage, /explore, /move rocks, /pick up coconut, /save, /exit",
+        "placeholder": "chat, /gather, /explore, /move rocks, /pick up coconut 1, /save, /exit",
         "unknown_command": "unknown command",
         "client_error": "client error",
         "saved_exiting": "saved; exiting",
@@ -979,6 +1114,9 @@ TRANSLATIONS = {
         "outcome": "结局",
         "win": "胜利",
         "loss": "失败",
+        "escape_path": "逃离",
+        "death_path": "死亡",
+        "raft_build": "木筏建造",
         "raft_voyage": "木筏航程",
         "passing_ship": "过往船只",
         "thirst": "口渴",
@@ -1025,6 +1163,9 @@ TRANSLATIONS = {
         "heat_balance": "热平衡",
         "cold_balance": "冷平衡",
         "blood_pressure_stability": "血压稳定",
+        "parasite_control": "寄生虫控制",
+        "malaria_resistance": "疟疾抵抗",
+        "infection_control": "感染控制",
         "fever_control": "发热控制",
         "stomach_stability": "胃部稳定",
         "digestion": "消化",
@@ -1072,6 +1213,13 @@ TRANSLATIONS = {
         "mushroom_appetite": "蘑菇食欲",
         "yam_appetite": "山药食欲",
         "weather": "天气",
+        "season": "季节",
+        "rain_counter": "雨势计数",
+        "rain_value": "雨量",
+        "sun_strength": "日照",
+        "tide": "潮汐",
+        "high_tide": "涨潮",
+        "low_tide": "退潮",
         "light": "光线",
         "paused": "暂停",
         "none": "无",
@@ -1082,7 +1230,7 @@ TRANSLATIONS = {
         "survivor_here": "同伴在这里",
         "commands": "命令",
         "no_commands": "没有匹配的命令",
-        "placeholder": "聊天，/forage，/explore，/move rocks，/pick up coconut，/save，/exit",
+        "placeholder": "聊天，/gather，/explore，/move rocks，/pick up coconut 1，/save，/exit",
         "unknown_command": "未知命令",
         "client_error": "客户端错误",
         "saved_exiting": "已保存；正在退出",
@@ -1093,6 +1241,7 @@ OUTCOME_REASONS_ZH = {
     "starvation": "饥饿",
     "dehydration and starvation": "脱水和饥饿",
     "injuries and exhaustion": "伤病和虚脱",
+    "disease": "疾病",
     "rescued by passing ship": "被过往船只救起",
     "rescued after completing raft voyage": "完成木筏航程后获救",
 }
@@ -1103,7 +1252,48 @@ def ui_text(key: str, lang: str = "en") -> str:
 
 
 def object_name(name: str, lang: str = "en") -> str:
-    return OBJECT_NAMES_ZH.get(name, name) if lang == "zh" else name
+    if lang != "zh":
+        return name
+    if name.endswith("'s pack"):
+        owner = name.removesuffix("'s pack")
+        return f"{owner}的背包"
+    return OBJECT_NAMES_ZH.get(name, name)
+
+
+def light_name(name: str, lang: str = "en") -> str:
+    if lang != "zh":
+        return name
+    return {
+        "daylight": "日光",
+        "firelit": "火光",
+        "torchlit": "火把光",
+        "dark": "黑暗",
+    }.get(name, name)
+
+
+def canonical_weather_name(name: str) -> str:
+    return WEATHER_ALIASES.get(name, name)
+
+
+def weather_name(name: str, lang: str = "en") -> str:
+    canonical = canonical_weather_name(name)
+    if lang == "zh":
+        return WEATHER_NAMES_ZH.get(canonical, WEATHER_NAMES_ZH.get(name, name))
+    return name if name == "rain" else canonical
+
+
+def season_name(name: str, lang: str = "en") -> str:
+    if lang != "zh":
+        return name
+    return {"dry": "旱季", "wet": "雨季"}.get(name, name)
+
+
+def tide_name(name: str, lang: str = "en") -> str:
+    if name == "high":
+        return ui_text("high_tide", lang)
+    if name == "low":
+        return ui_text("low_tide", lang)
+    return name
 
 
 def canonical_object_name(name: str) -> str:
@@ -1119,13 +1309,19 @@ def action_label(action: str, lang: str = "en") -> str:
         return localized_action_name(action, lang)
     gerunds = {
         "drink": "drinking",
+        "break conch": "breaking a conch",
+        "cook conch meat": "cooking conch meat",
+        "dive": "diving",
         "eat": "eating",
         "pick up": "picking up items",
         "drop": "dropping items",
+        "build raft": "building a raft",
         "explore": "exploring",
         "fish": "fishing",
-        "forage": "foraging",
+        "fish with bait": "fishing with bait",
+        "spear fish": "spear fishing",
         "gather": "gathering",
+        "go for a walk": "walking",
         "leisure": "relaxing",
         "move": "moving",
         "rest": "resting",
@@ -1174,9 +1370,87 @@ def resource_description(item: str, resource: dict[str, Any], lang: str = "en") 
     return f"{name}: {qty}/{capacity} available{regrow}"
 
 
+def raft_stage_component_text(stage: dict[str, Any], lang: str = "en") -> str:
+    materials = [
+        f"{qty} {object_name(str(item), lang)}"
+        for item, qty in stage.get("materials", {}).items()
+    ]
+    tool_wear = [
+        (
+            f"{object_name(str(item), lang)} wear {wear}"
+            if lang == "en"
+            else f"{object_name(str(item), lang)}损耗 {wear}"
+        )
+        for item, wear in stage.get("tool_wear", {}).items()
+    ]
+    return ", ".join([*materials, *tool_wear])
+
+
+def placed_storm_integrity_text(obj: dict[str, Any], lang: str = "en") -> str | None:
+    data = obj.get("data") or {}
+    if not isinstance(data, dict) or "storm_damage" not in data:
+        return None
+    integrity = max(0, min(100, 100 - int(data.get("storm_damage", 0))))
+    if lang == "zh":
+        return f"风暴完整度 {integrity:3d} {_stat_bar(integrity)}"
+    return f"storm integrity {integrity:3d} {_stat_bar(integrity)}"
+
+
+def with_placed_storm_integrity(base: str, obj: dict[str, Any], lang: str = "en") -> str:
+    detail = placed_storm_integrity_text(obj, lang)
+    if not detail:
+        return base
+    return f"{base}; {detail}" if lang == "en" else f"{base}；{detail}"
+
+
+def durability_detail(data: dict[str, Any], lang: str = "en") -> str:
+    durability = int(data.get("durability", 0))
+    max_durability = max(1, int(data.get("max_durability", durability or 1)))
+    pct = max(0, min(100, durability * 100 // max_durability))
+    return f"耐久 {pct:3d} {_stat_bar(pct)}" if lang == "zh" else f"durability {pct:3d} {_stat_bar(pct)}"
+
+
+def storage_state_details(data: dict[str, Any], lang: str = "en") -> list[str]:
+    capacity = int(data.get("storage_capacity", 0))
+    slots = data.get("slots")
+    used_weight = storage_used_weight(data)
+    used_slots = len(storage_contents(data))
+    weight_pct = max(0, min(100, used_weight * 100 // max(1, capacity)))
+    if lang == "zh":
+        details = [f"储量 {used_weight}/{capacity} {weight_pct:3d} {_stat_bar(weight_pct)}"]
+        if slots is not None:
+            slot_capacity = int(slots)
+            slot_pct = max(0, min(100, used_slots * 100 // max(1, slot_capacity)))
+            details.append(f"格数 {used_slots}/{slot_capacity} {slot_pct:3d} {_stat_bar(slot_pct)}")
+        if "weight_reduction" in data:
+            details.append(f"减重 {int(data.get('weight_reduction', 0))}")
+        if "equipped_weight_reduction" in data:
+            details.append(f"装备减重 {int(data.get('equipped_weight_reduction', 0))}")
+        if "cool_storage" in data:
+            details.append("阴凉储藏")
+        if "rain_protection" in data:
+            details.append(f"防雨 +{int(data.get('rain_protection', 0))}")
+        return details
+    details = [f"storage {used_weight}/{capacity} {weight_pct:3d} {_stat_bar(weight_pct)}"]
+    if slots is not None:
+        slot_capacity = int(slots)
+        slot_pct = max(0, min(100, used_slots * 100 // max(1, slot_capacity)))
+        details.append(f"slots {used_slots}/{slot_capacity} {slot_pct:3d} {_stat_bar(slot_pct)}")
+    if "weight_reduction" in data:
+        details.append(f"load relief {int(data.get('weight_reduction', 0))}")
+    if "equipped_weight_reduction" in data:
+        details.append(f"equipped relief {int(data.get('equipped_weight_reduction', 0))}")
+    if "cool_storage" in data:
+        details.append("cool storage")
+    if "rain_protection" in data:
+        details.append(f"rain +{int(data.get('rain_protection', 0))}")
+    return details
+
+
 def placed_description(obj: dict[str, Any], lang: str = "en") -> str:
     kind = str(obj["kind"])
     base = PLACED_DESCRIPTIONS.get(lang, PLACED_DESCRIPTIONS["en"]).get(kind, "present in the scene" if lang == "en" else "在现场")
+    base = with_placed_storm_integrity(base, obj, lang)
     if kind in {"fire", "campfire"}:
         fuel = int(obj.get("fuel", 0))
         if not obj.get("active", True):
@@ -1253,22 +1527,25 @@ def placed_description(obj: dict[str, Any], lang: str = "en") -> str:
             return f"{base}；{water}{protection}"
         protection = f"; mosquito protection {protection_pct:3d} {_stat_bar(protection_pct)}" if kind == "water reservoir" else ""
         return f"{base}; {liquid_name} {liquid}/{capacity} {water_pct:3d} {_stat_bar(water_pct)}{protection}"
+    if kind == "raft frame":
+        data = obj.get("data", {})
+        stage = int(data.get("stage", 0))
+        stages = int(data.get("stages", len(RAFT_BUILD_STAGES)))
+        progress = max(0, min(100, stage * 100 // max(1, stages)))
+        if stage < len(RAFT_BUILD_STAGES):
+            next_parts = raft_stage_component_text(RAFT_BUILD_STAGES[stage], lang)
+            if lang == "zh":
+                return f"{base}；阶段 {stage}/{stages} {progress:3d} {_stat_bar(progress)}；下一步：{next_parts}"
+            return f"{base}; stage {stage}/{stages} {progress:3d} {_stat_bar(progress)}; next: {next_parts}"
+        if lang == "zh":
+            return f"{base}；阶段 {stage}/{stages} {progress:3d} {_stat_bar(progress)}"
+        return f"{base}; stage {stage}/{stages} {progress:3d} {_stat_bar(progress)}"
     data = obj.get("data", {})
     if isinstance(data, dict) and "storage_capacity" in data:
-        capacity = int(data.get("storage_capacity", 0))
-        slots = data.get("slots")
-        used_weight = storage_used_weight(data)
-        used_slots = len(storage_contents(data))
-        details = [f"storage {used_weight}/{capacity}" if lang == "en" else f"储量 {used_weight}/{capacity}"]
-        if slots is not None:
-            details.append(f"slots {used_slots}/{int(slots)}" if lang == "en" else f"格数 {used_slots}/{int(slots)}")
-        if "weight_reduction" in data:
-            value = int(data.get("weight_reduction", 0))
-            details.append(f"load relief {value}" if lang == "en" else f"减重 {value}")
-        if "cool_storage" in data:
-            details.append("cool storage" if lang == "en" else "阴凉储藏")
-        if "rain_protection" in data:
-            details.append(f"rain +{int(data.get('rain_protection', 0))}" if lang == "en" else f"防雨 +{int(data.get('rain_protection', 0))}")
+        details = []
+        if "durability" in data:
+            details.append(durability_detail(data, lang))
+        details.extend(storage_state_details(data, lang))
         return f"{base}; " + "; ".join(details) if lang == "en" else f"{base}；" + "；".join(details)
     return base
 
@@ -1299,19 +1576,276 @@ def storage_used_weight(data: dict[str, Any]) -> int:
     return sum(stack_weight(stack) for stack in storage_contents(data))
 
 
+def carried_stack_raw_weight(stack: dict[str, Any]) -> int:
+    data = stack.get("data") or {}
+    stored = storage_used_weight(data) if isinstance(data, dict) and "storage_capacity" in data else 0
+    return stack_weight(stack) + stored
+
+
+def carried_stack_effective_load(stack: dict[str, Any], *, worn_on_back: bool = False) -> tuple[int, int, int]:
+    data = stack.get("data") or {}
+    raw = carried_stack_raw_weight(stack)
+    relief = 0
+    if isinstance(data, dict) and "storage_capacity" in data:
+        relief += min(storage_used_weight(data), int(data.get("weight_reduction", 0)))
+        if worn_on_back:
+            relief += min(stack_weight(stack), int(data.get("equipped_weight_reduction", 0)))
+    return max(0, raw - relief), raw, relief
+
+
+def stack_equipped_slot(stack: dict[str, Any]) -> str | None:
+    data = stack.get("data") or {}
+    if not isinstance(data, dict) or "storage_capacity" not in data:
+        return None
+    if data.get("equipped_slot"):
+        return str(data["equipped_slot"])
+    if stack.get("item") == "woven backpack" or data.get("equipped_weight_reduction"):
+        return "back"
+    return None
+
+
+def worn_backpack_index(carried: list[dict[str, Any]]) -> int | None:
+    candidates = [
+        (
+            int((stack.get("data") or {}).get("equipped_weight_reduction", 0)),
+            int((stack.get("data") or {}).get("storage_capacity", 0)),
+            -index,
+            index,
+        )
+        for index, stack in enumerate(carried)
+        if stack_equipped_slot(stack) == "back"
+    ]
+    if not candidates:
+        return None
+    return max(candidates)[3]
+
+
+def stack_pickup_supported(stack: dict[str, Any], current_player: dict[str, Any]) -> bool:
+    data = stack.get("data") or {}
+    if not isinstance(data, dict) or "storage_capacity" not in data:
+        return True
+    return (
+        stack.get("item") in HAND_CARRIED_STORAGE_KINDS
+        or (
+            stack_equipped_slot(stack) == "back"
+            and worn_backpack_index(list(current_player.get("carried", []))) is None
+        )
+    )
+
+
+def player_for_snapshot(snapshot: dict[str, Any], player_name: str | None = None) -> dict[str, Any]:
+    players = snapshot.get("players", {})
+    current_player = players.get(player_name) if player_name else None
+    if current_player is not None:
+        return current_player
+    if not players:
+        return {}
+    return next((p for p in players.values() if p.get("connected")), next(iter(players.values()), {}))
+
+
+def carried_display_entries(current_player: dict[str, Any]) -> list[tuple[int, int, dict[str, Any]]]:
+    carried = list(current_player.get("carried", []))
+    return [(display, index, carried[index]) for display, index in enumerate(range(len(carried) - 1, -1, -1), 1)]
+
+
+def carried_entry_by_display_index(current_player: dict[str, Any], display_index: int) -> tuple[int, dict[str, Any]] | None:
+    for display, index, stack in carried_display_entries(current_player):
+        if display == display_index:
+            return index, stack
+    return None
+
+
+def storage_content_display_entries(data: dict[str, Any]) -> list[tuple[int, int, dict[str, Any]]]:
+    contents = storage_contents(data)
+    return [(display, index, contents[index]) for display, index in enumerate(range(len(contents) - 1, -1, -1), 1)]
+
+
+def placed_storage_display_entries(loc: dict[str, Any]) -> list[tuple[int, int, dict[str, Any]]]:
+    placed = list(loc.get("placed", []))
+    entries = []
+    for index, obj in enumerate(placed):
+        data = obj.get("data") or {}
+        if obj.get("active", True) and isinstance(data, dict) and "storage_capacity" in data:
+            entries.append((index + 1, index, obj))
+    return entries
+
+
+def scene_display_entries(loc: dict[str, Any]) -> list[tuple[int, str, int, dict[str, Any]]]:
+    entries: list[tuple[int, str, int, dict[str, Any]]] = []
+    for index, obj in enumerate(loc.get("placed", [])):
+        entries.append((len(entries) + 1, "placed", index, obj))
+    ground = list(loc.get("ground", []))
+    for index in range(len(ground) - 1, -1, -1):
+        entries.append((len(entries) + 1, "ground", index, ground[index]))
+    return entries
+
+
+def scene_entry_pickup_supported(kind: str, entry: dict[str, Any], current_player: dict[str, Any]) -> bool:
+    if kind == "ground":
+        return bool(entry.get("item")) and stack_pickup_supported(entry, current_player)
+    data = entry.get("data") or {}
+    return (
+        bool(entry.get("active", True))
+        and entry.get("kind") in PICKABLE_STORAGE_KINDS
+        and isinstance(data, dict)
+        and "storage_capacity" in data
+    )
+
+
+def indexed_item_choice(action: str, display_index: int, item: str) -> str:
+    return f"/{action} {item} {display_index}"
+
+
+def indexed_content_choice(action: str, container_display: int, content_display: int, item: str) -> str:
+    return f"/{action} {item} {container_display}.{content_display}"
+
+
+def parse_display_index_suffix(suffix: str) -> tuple[int, str] | None:
+    text = suffix.strip()
+    match = re.fullmatch(r"#?(\d+)(?:[.)])?(?:\s+(.+))?", text)
+    if not match:
+        match = re.fullmatch(r"(.+?)\s+#?(\d+)(?:[.)])?", text)
+        if not match:
+            return None
+        return int(match.group(2)), match.group(1).strip()
+    return int(match.group(1)), (match.group(2) or "").strip()
+
+
+def parse_content_index_suffix(suffix: str) -> tuple[int, int, str] | None:
+    text = suffix.strip()
+    match = re.fullmatch(r"#?(\d+)\.(\d+)(?:\s+(.+))?", text)
+    if not match:
+        match = re.fullmatch(r"(.+?)\s+#?(\d+)\.(\d+)", text)
+        if not match:
+            return None
+        return int(match.group(2)), int(match.group(3)), match.group(1).strip()
+    return int(match.group(1)), int(match.group(2)), (match.group(3) or "").strip()
+
+
+def indexed_carried_args(
+    snapshot: dict[str, Any],
+    player_name: str | None,
+    suffix: str,
+    *,
+    storage: bool | None = None,
+    item: str | None = None,
+) -> dict[str, Any] | None:
+    parsed = parse_display_index_suffix(suffix)
+    if parsed is None:
+        return None
+    display_index, rest = parsed
+    entry = carried_entry_by_display_index(player_for_snapshot(snapshot, player_name), display_index)
+    if entry is None:
+        return None
+    carried_index, stack = entry
+    stack_data = stack.get("data") or {}
+    stack_is_storage = isinstance(stack_data, dict) and "storage_capacity" in stack_data
+    if storage is True and not stack_is_storage:
+        return None
+    if storage is False and stack_is_storage:
+        return None
+    stack_item = str(stack.get("item") or "")
+    if item is not None and stack_item != item:
+        return None
+    if rest and canonical_object_name(rest) != stack_item:
+        return None
+    return {"carried_index": carried_index, "item": stack_item}
+
+
+def indexed_carried_content_args(snapshot: dict[str, Any], player_name: str | None, suffix: str) -> dict[str, Any] | None:
+    parsed = parse_content_index_suffix(suffix)
+    if parsed is None:
+        return None
+    container_display, content_display, rest = parsed
+    entry = carried_entry_by_display_index(player_for_snapshot(snapshot, player_name), container_display)
+    if entry is None:
+        return None
+    carried_index, container = entry
+    data = container.get("data") or {}
+    if not isinstance(data, dict) or "storage_capacity" not in data:
+        return None
+    for display, content_index, content in storage_content_display_entries(data):
+        if display != content_display:
+            continue
+        item = str(content.get("item") or "")
+        if rest and canonical_object_name(rest) != item:
+            return None
+        return {"carried_index": carried_index, "content_index": content_index, "item": item}
+    return None
+
+
+def indexed_placed_content_args(snapshot: dict[str, Any], player_name: str | None, suffix: str) -> dict[str, Any] | None:
+    parsed = parse_content_index_suffix(suffix)
+    if parsed is None:
+        return None
+    storage_display, content_display, rest = parsed
+    current_location = current_location_for_snapshot(snapshot, player_name)
+    loc = snapshot.get("locations", {}).get(current_location, {}) if current_location else {}
+    for display, placed_index, obj in placed_storage_display_entries(loc):
+        if display != storage_display:
+            continue
+        data = obj.get("data") or {}
+        for content_entry_display, content_index, content in storage_content_display_entries(data):
+            if content_entry_display != content_display:
+                continue
+            item = str(content.get("item") or "")
+            if rest and canonical_object_name(rest) != item:
+                return None
+            return {"placed_index": placed_index, "content_index": content_index, "item": item}
+    return None
+
+
+def indexed_scene_args(snapshot: dict[str, Any], player_name: str | None, suffix: str) -> dict[str, Any] | None:
+    parsed = parse_display_index_suffix(suffix)
+    if parsed is None:
+        return None
+    display_index, rest = parsed
+    current_player = player_for_snapshot(snapshot, player_name)
+    current_location = str(current_player.get("location") or "")
+    loc = snapshot.get("locations", {}).get(current_location, {}) if current_location else {}
+    for display, kind, index, entry in scene_display_entries(loc):
+        if display != display_index:
+            continue
+        item = str(entry.get("item") if kind == "ground" else entry.get("kind"))
+        if not scene_entry_pickup_supported(kind, entry, current_player):
+            return None
+        if rest and canonical_object_name(rest) != item:
+            return None
+        key = "ground_index" if kind == "ground" else "placed_index"
+        return {key: index, "item": item}
+    return None
+
+
+def carried_slot_and_load_description(stack: dict[str, Any], lang: str, *, worn_on_back: bool = False) -> str:
+    load, raw, relief = carried_stack_effective_load(stack, worn_on_back=worn_on_back)
+    if lang == "zh":
+        slot = "背部 +1" if worn_on_back else "手持格 +1"
+        detail = f"{slot}；负重 +{load}"
+        if relief:
+            detail += f"（重量 {raw}，减重 {relief}）"
+        return detail
+    slot = "back slot +1" if worn_on_back else "hand slot +1"
+    detail = f"{slot}; load +{load}"
+    if relief:
+        detail += f" (weight {raw}, relief {relief})"
+    return detail
+
+
 def item_description(stack: dict[str, Any], lang: str = "en", *, carried: bool = False) -> str:
     item = str(stack["item"])
     age = int(stack.get("age_minutes", 0))
     data = stack.get("data") or {}
     details = []
     if isinstance(data, dict) and "durability" in data:
-        durability = int(data.get("durability", 0))
-        max_durability = max(1, int(data.get("max_durability", durability or 1)))
-        pct = max(0, min(100, durability * 100 // max_durability))
+        details.append(durability_detail(data, lang))
+    if isinstance(data, dict) and "fuel" in data:
+        fuel = int(data.get("fuel", 0))
+        max_fuel = max(1, int(data.get("max_fuel", fuel or 1)))
+        pct = max(0, min(100, fuel * 100 // max_fuel))
         if lang == "zh":
-            details.append(f"耐久 {pct:3d} {_stat_bar(pct)}")
+            details.append(f"燃料 {pct:3d} {_stat_bar(pct)}")
         else:
-            details.append(f"durability {pct:3d} {_stat_bar(pct)}")
+            details.append(f"fuel {pct:3d} {_stat_bar(pct)}")
     if isinstance(data, dict) and "liquid_capacity" in data:
         capacity = int(data.get("liquid_capacity", 0))
         sealed = bool(data.get("sealed"))
@@ -1333,27 +1867,48 @@ def item_description(stack: dict[str, Any], lang: str = "en", *, carried: bool =
             else:
                 details.append(f"empty {liquid_pct:3d} {_stat_bar(liquid_pct)}")
     if isinstance(data, dict) and "storage_capacity" in data:
-        capacity = int(data.get("storage_capacity", 0))
-        slots = data.get("slots")
-        used_weight = storage_used_weight(data)
-        used_slots = len(storage_contents(data))
-        if lang == "zh":
-            details.append(f"储量 {used_weight}/{capacity}")
-            if slots is not None:
-                details.append(f"格数 {used_slots}/{int(slots)}")
-            if "weight_reduction" in data:
-                details.append(f"减重 {int(data.get('weight_reduction', 0))}")
-            if "equipped_weight_reduction" in data:
-                details.append(f"装备减重 {int(data.get('equipped_weight_reduction', 0))}")
-        else:
-            details.append(f"storage {used_weight}/{capacity}")
-            if slots is not None:
-                details.append(f"slots {used_slots}/{int(slots)}")
-            if "weight_reduction" in data:
-                details.append(f"load relief {int(data.get('weight_reduction', 0))}")
-            if "equipped_weight_reduction" in data:
-                details.append(f"equipped relief {int(data.get('equipped_weight_reduction', 0))}")
+        details.extend(storage_state_details(data, lang))
     spoil_minutes = SPOIL_MINUTES.get(item)
+    if item == "lit tinder" and spoil_minutes:
+        hours_left = max(0, (spoil_minutes - age + 59) // 60)
+        remaining_pct = max(0, min(100, 100 - age * 100 // spoil_minutes))
+        if lang == "zh":
+            details.append(f"余火 {remaining_pct:3d} {_stat_bar(remaining_pct)}")
+            return f"{ITEM_DESCRIPTIONS['zh'][item]}；约 {hours_left} 小时后熄灭；" + "；".join(details)
+        details.append(f"ember {remaining_pct:3d} {_stat_bar(remaining_pct)}")
+        return f"{ITEM_DESCRIPTIONS['en'][item]}; burns out in about {hours_left}h; " + "; ".join(details)
+    if item == "lit torch" and spoil_minutes:
+        hours_left = max(0, (spoil_minutes - age + 59) // 60)
+        remaining_pct = max(0, min(100, 100 - age * 100 // spoil_minutes))
+        if lang == "zh":
+            details.append(f"火焰 {remaining_pct:3d} {_stat_bar(remaining_pct)}")
+            return f"{ITEM_DESCRIPTIONS['zh'][item]}；约 {hours_left} 小时后熄灭；" + "；".join(details)
+        details.append(f"flame {remaining_pct:3d} {_stat_bar(remaining_pct)}")
+        return f"{ITEM_DESCRIPTIONS['en'][item]}; burns out in about {hours_left}h; " + "; ".join(details)
+    if item == "leaves" and spoil_minutes:
+        hours_left = max(0, (spoil_minutes - age + 59) // 60)
+        drying_pct = max(0, min(100, age * 100 // spoil_minutes))
+        if lang == "zh":
+            details.append(f"干燥 {drying_pct:3d} {_stat_bar(drying_pct)}")
+            return f"{ITEM_DESCRIPTIONS['zh'][item]}；约 {hours_left} 小时后变成干叶；" + "；".join(details)
+        details.append(f"drying {drying_pct:3d} {_stat_bar(drying_pct)}")
+        return f"{ITEM_DESCRIPTIONS['en'][item]}; dries into dry leaves in about {hours_left}h; " + "; ".join(details)
+    if item == "fleshed skin" and spoil_minutes:
+        hours_left = max(0, (spoil_minutes - age + 59) // 60)
+        curing_pct = max(0, min(100, age * 100 // spoil_minutes))
+        if lang == "zh":
+            details.append(f"风干 {curing_pct:3d} {_stat_bar(curing_pct)}")
+            return f"{ITEM_DESCRIPTIONS['zh'][item]}；约 {hours_left} 小时后变成皮革；" + "；".join(details)
+        details.append(f"curing {curing_pct:3d} {_stat_bar(curing_pct)}")
+        return f"{ITEM_DESCRIPTIONS['en'][item]}; cures into leather in about {hours_left}h; " + "; ".join(details)
+    if item == "fresh skin" and spoil_minutes:
+        hours_left = max(0, (spoil_minutes - age + 59) // 60)
+        usable_pct = max(0, min(100, 100 - age * 100 // spoil_minutes))
+        if lang == "zh":
+            details.append(f"可用 {usable_pct:3d} {_stat_bar(usable_pct)}")
+            return f"{ITEM_DESCRIPTIONS['zh'][item]}；约 {hours_left} 小时后腐坏；" + "；".join(details)
+        details.append(f"usable {usable_pct:3d} {_stat_bar(usable_pct)}")
+        return f"{ITEM_DESCRIPTIONS['en'][item]}; rots in about {hours_left}h; " + "; ".join(details)
     if spoil_minutes:
         hours_left = max(0, (spoil_minutes - age + 59) // 60)
         ratio = age / spoil_minutes
@@ -1388,22 +1943,44 @@ def localize_event(event: str, lang: str = "en") -> str:
         return "保存正在进行中。"
     if event == "server disconnected":
         return "服务器已断开连接。"
+    if event == "Day 1 dawns on the beach.":
+        return "第 1 天在海滩破晓。"
     if match := re.fullmatch(r"(.+) joined(?: the island)?\.?", event):
         return f"{match[1]} 加入了小岛。"
+    if match := re.fullmatch(r"(.+) reconnected\.", event):
+        return f"{match[1]} 重新连接了。"
     if match := re.fullmatch(r"(.+) disconnected(?:; their personal state is frozen)?\.?", event):
         return f"{match[1]} 已断开连接。"
     if match := re.fullmatch(r"Day (\d+) begins\.", event):
         return f"第 {match[1]} 天开始了。"
+    if event == "Heavy rain starts over the island.":
+        return "岛上下起了大雨。"
+    if event == "A storm lashes the island.":
+        return "风暴抽打着小岛。"
+    if event == "The sky clears.":
+        return "天空放晴了。"
+    if match := re.fullmatch(r"Storm winds battered (.+) at (.+)\.", event):
+        return f"风暴在{object_name(match[2], 'zh')}吹打着{match[1]}。"
+    if match := re.fullmatch(r"Storm damaged (.+) at (.+)\.", event):
+        return f"风暴损坏了{object_name(match[2], 'zh')}的{object_name(match[1], 'zh')}。"
+    if match := re.fullmatch(r"A (.+) at (.+) was wrecked by the storm\.", event):
+        return f"{object_name(match[2], 'zh')}的{object_name(match[1], 'zh')}被风暴毁坏了。"
     if match := re.fullmatch(r"(.+) started (.+)\.", event):
         return f"{match[1]} 开始{localized_action_name(match[2], 'zh')}。"
     if match := re.fullmatch(r"(.+) completed (.+)\.", event):
         return f"{match[1]} 完成{localized_action_name(match[2], 'zh')}。"
+    if match := re.fullmatch(r"(.+) cancelled (.+)\.", event):
+        return f"{match[1]} 取消了{localized_action_name(match[2], 'zh')}。"
     if match := re.fullmatch(r"(.+) died from (.+)\.", event):
         return f"{match[1]}死于{localized_outcome_reason(match[2], 'zh')}。"
     if match := re.fullmatch(r"(.+) was rescued by a ship\.", event):
         return f"{match[1]}被船只救起了。"
     if match := re.fullmatch(r"(.+) sailed the raft to distance (\d+)\.", event):
         return f"{match[1]}驾驶木筏航行到距离 {match[2]}。"
+    if match := re.fullmatch(r"(.+) launched a raft at the beach\.", event):
+        return f"{match[1]}在海滩放下了木筏。"
+    if match := re.fullmatch(r"(.+) advanced the raft frame to stage (\d+)/(\d+)\.", event):
+        return f"{match[1]}把木筏框架推进到阶段 {match[2]}/{match[3]}。"
     if match := re.fullmatch(r"(.+) signaled the passing ship \((\d+)/100\)\.", event):
         return f"{match[1]}向过往船只示意（{match[2]}/100）。"
     if event == "A passing ship appeared near the raft.":
@@ -1416,17 +1993,36 @@ def localize_event(event: str, lang: str = "en") -> str:
         return f"{match[1]} 发现了{object_name(match[2], 'zh')}。"
     if match := re.fullmatch(r"(.+) found (.+) at (.+)\.", event):
         return f"{match[1]} 在{object_name(match[3], 'zh')}找到了{object_name(match[2], 'zh')}。"
-    if match := re.fullmatch(r"(.+) found (?:(\d+) )?(.+) while exploring (.+)\.", event):
+    if match := re.fullmatch(r"(.+) found nothing while (diving|walking) (.+)\.", event):
+        activity = {"diving": "潜水", "walking": "散步"}.get(match[2], match[2])
+        return f"{match[1]} 在{activity}{object_name(match[3], 'zh')}时什么也没找到。"
+    if match := re.fullmatch(r"(.+) caught nothing while (fishing|spear fishing) (.+)\.", event):
+        activity = {"fishing": "钓鱼", "spear fishing": "叉鱼"}.get(match[2], match[2])
+        return f"{match[1]} 在{object_name(match[3], 'zh')}{activity}时一无所获。"
+    if match := re.fullmatch(r"(.+) found (?:(\d+) )?(.+) while (exploring|walking) (.+)\.", event):
         qty = f"{match[2]} " if match[2] else ""
-        return f"{match[1]} 在探索{object_name(match[4], 'zh')}时找到了{qty}{object_name(match[3], 'zh')}。"
+        activity = {"exploring": "探索", "walking": "散步"}.get(match[4], match[4])
+        return f"{match[1]} 在{activity}{object_name(match[5], 'zh')}时找到了{qty}{object_name(match[3], 'zh')}。"
+    if match := re.fullmatch(r"(.+) had no free carry slot, so (\d+) (.+) was left at (.+)\.", event):
+        return f"{match[1]}没有空余携带格，{match[2]}个{object_name(match[3], 'zh')}留在了{object_name(match[4], 'zh')}。"
     if match := re.fullmatch(r"Raw fish spoiled at (.+)\.", event):
         return f"生鱼在{object_name(match[1], 'zh')}腐坏了。"
     if match := re.fullmatch(r"Cooked fish spoiled at (.+)\.", event):
         return f"熟鱼在{object_name(match[1], 'zh')}腐坏了。"
-    if match := re.fullmatch(r"(.+) spoiled at (.+)\.", event):
-        return f"{object_name(match[1].lower(), 'zh')}在{object_name(match[2], 'zh')}腐坏了。"
     if match := re.fullmatch(r"Exposed (.+) evaporated at (.+)\.", event):
         return f"暴露的{object_name(match[1], 'zh')}在{object_name(match[2], 'zh')}蒸发了。"
+    if match := re.fullmatch(r"Leaves dried at (.+)\.", event):
+        return f"叶子在{object_name(match[1], 'zh')}变成干叶了。"
+    if match := re.fullmatch(r"Fleshed skin cured at (.+)\.", event):
+        return f"刮净兽皮在{object_name(match[1], 'zh')}变成皮革了。"
+    if match := re.fullmatch(r"Lit tinder burned out at (.+)\.", event):
+        return f"点燃的火绒在{object_name(match[1], 'zh')}熄灭了。"
+    if match := re.fullmatch(r"Lit torch burned out at (.+)\.", event):
+        return f"点燃的火把在{object_name(match[1], 'zh')}熄灭了。"
+    if match := re.fullmatch(r"(.+) spoiled at (.+)\.", event):
+        return f"{object_name(match[1].lower(), 'zh')}在{object_name(match[2], 'zh')}腐坏了。"
+    if match := re.fullmatch(r"(.+) regrew at (.+)\.", event):
+        return f"{object_name(match[1].lower(), 'zh')}在{object_name(match[2], 'zh')}重新长出来了。"
     if match := re.fullmatch(r"A (.+) at (.+) burned out\.", event):
         return f"{object_name(match[1], 'zh')}在{object_name(match[2], 'zh')}熄灭了。"
     if match := re.fullmatch(r"(.+)'s (.+) wore out\.", event):
@@ -1487,35 +2083,97 @@ def command_choices(snapshot: dict[str, Any], player_name: str | None = None) ->
             choices.extend(f"/move {name}" for name in destinations)
             choices.append("/move <location>")
         elif action == "pick up":
-            choices.extend(f"/pick up {stack.get('item')}" for stack in reversed(loc.get("ground", [])) if stack.get("item"))
+            choices.extend(
+                indexed_item_choice(
+                    "pick up",
+                    display,
+                    str(entry.get("item") if kind == "ground" else entry.get("kind")),
+                )
+                for display, kind, _index, entry in scene_display_entries(loc)
+                if scene_entry_pickup_supported(kind, entry, current_player)
+            )
+            choices.extend(
+                f"/pick up {entry.get('item') if kind == 'ground' else entry.get('kind')}"
+                for _display, kind, _index, entry in scene_display_entries(loc)
+                if scene_entry_pickup_supported(kind, entry, current_player)
+            )
             choices.append("/pick up <item>")
         elif action == "drop":
-            choices.extend(f"/drop {stack.get('item')}" for stack in reversed(current_player.get("carried", [])) if stack.get("item"))
+            choices.extend(
+                indexed_item_choice(action, display, str(stack.get("item")))
+                for display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") and "storage_capacity" not in (stack.get("data") or {})
+            )
+            choices.extend(
+                f"/drop {stack.get('item')}"
+                for _display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") and "storage_capacity" not in (stack.get("data") or {})
+            )
             choices.append("/drop <item>")
         elif action in {"pack", "store"}:
             choices.extend(
+                indexed_item_choice(action, display, str(stack.get("item")))
+                for display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") and "storage_capacity" not in (stack.get("data") or {})
+            )
+            choices.extend(
                 f"/{action} {stack.get('item')}"
-                for stack in reversed(current_player.get("carried", []))
+                for _display, _index, stack in carried_display_entries(current_player)
                 if stack.get("item") and "storage_capacity" not in (stack.get("data") or {})
             )
             choices.append(f"/{action} <item>")
         elif action == "unpack":
             choices.extend(
+                indexed_content_choice("unpack", container_display, content_display, str(content.get("item")))
+                for container_display, _container_index, container in carried_display_entries(current_player)
+                for content_display, _content_index, content in storage_content_display_entries(container.get("data") or {})
+                if content.get("item")
+            )
+            choices.extend(
                 f"/unpack {content.get('item')}"
-                for container in reversed(current_player.get("carried", []))
-                for content in reversed(storage_contents(container.get("data") or {}))
+                for _container_display, _container_index, container in carried_display_entries(current_player)
+                for _content_display, _content_index, content in storage_content_display_entries(container.get("data") or {})
                 if content.get("item")
             )
             choices.append("/unpack <item>")
         elif action == "retrieve":
             choices.extend(
+                indexed_content_choice("retrieve", storage_display, content_display, str(content.get("item")))
+                for storage_display, _placed_index, obj in placed_storage_display_entries(loc)
+                for content_display, _content_index, content in storage_content_display_entries(obj.get("data") or {})
+                if content.get("item")
+            )
+            choices.extend(
                 f"/retrieve {content.get('item')}"
-                for obj in loc.get("placed", [])
-                for content in reversed(storage_contents(obj.get("data") or {}))
+                for _storage_display, _placed_index, obj in placed_storage_display_entries(loc)
+                for _content_display, _content_index, content in storage_content_display_entries(obj.get("data") or {})
                 if content.get("item")
             )
             choices.append("/retrieve <item>")
-        elif action in {"forage", "gather"}:
+        elif action == "place basket":
+            choices.extend(
+                f"/place basket {display}"
+                for display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") == "basket"
+            )
+            choices.append("/place basket <index>")
+            choices.append("/place basket")
+        elif action == "add rope to basket":
+            choices.extend(
+                f"/add rope to basket {display}"
+                for display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") == "basket"
+            )
+            choices.append("/add rope to basket <index>")
+            choices.append("/add rope to basket")
+        elif action in TINDER_LIGHTING_ACTIONS:
+            choices.extend(
+                f"/{action} {stack.get('item')}"
+                for _display, _index, stack in carried_display_entries(current_player)
+                if stack.get("item") in TINDER_ITEMS
+            )
+            choices.append(f"/{action} <tinder>")
+        elif action == "gather":
             choices.extend(
                 f"/{action} {item}"
                 for item, resource in loc.get("resources", {}).items()
@@ -1587,6 +2245,14 @@ class CommandMenuState:
             command = "store"
         elif command.startswith("retrieve "):
             command = "retrieve"
+        elif command.startswith("light tinder with hand drill "):
+            command = "light tinder with hand drill"
+        elif command.startswith("light tinder with bow drill "):
+            command = "light tinder with bow drill"
+        elif command.startswith("light tinder from fire "):
+            command = "light tinder from fire"
+        elif command.startswith("light tinder with mirror "):
+            command = "light tinder with mirror"
         return command_description(command, lang)
 
     def display_for(self, choice: str, lang: str = "en") -> str:
@@ -1595,7 +2261,19 @@ class CommandMenuState:
         command = choice.removeprefix("/")
         action = command
         target = ""
-        for prefix in ("move", "pick up", "drop", "pack", "unpack", "store", "retrieve"):
+        for prefix in (
+            "light tinder with hand drill",
+            "light tinder with bow drill",
+            "light tinder from fire",
+            "light tinder with mirror",
+            "move",
+            "pick up",
+            "drop",
+            "pack",
+            "unpack",
+            "store",
+            "retrieve",
+        ):
             if command == prefix or command.startswith(f"{prefix} "):
                 action = prefix
                 target = command.removeprefix(prefix).strip()
@@ -1604,7 +2282,19 @@ class CommandMenuState:
             action = action.split(" <", 1)[0]
         action_name = localized_action_name(action, lang)
         if target and not target.startswith("<"):
-            label = f"{action_name} {object_name(target, lang)}"
+            content_target = parse_content_index_suffix(target)
+            indexed_target = parse_display_index_suffix(target)
+            if content_target and content_target[2]:
+                target_label = f"{object_name(canonical_object_name(content_target[2]), lang)} {content_target[0]}.{content_target[1]}"
+            elif indexed_target:
+                target_label = (
+                    f"{object_name(canonical_object_name(indexed_target[1]), lang)} {indexed_target[0]}"
+                    if indexed_target[1]
+                    else str(indexed_target[0])
+                )
+            else:
+                target_label = object_name(target, lang)
+            label = f"{action_name} {target_label}"
         else:
             label = action_name
         return f"{choice} ({label})" if label != command else choice
@@ -1667,7 +2357,7 @@ def command_to_message(text: str, snapshot: dict[str, Any], player_name: str | N
         return {"type": "cancel_action"}
     if command == "exit":
         return {"type": "exit"}
-    if command in {"inspect", "pause", "resume", "save"}:
+    if command in {"pause", "resume", "save"}:
         return {"type": command}
     if command == "move":
         return {"type": "start_action", "action": "move", "args": {}}
@@ -1684,31 +2374,107 @@ def command_to_message(text: str, snapshot: dict[str, Any], player_name: str | N
     if command in {"pick up", "pickup"}:
         return {"type": "start_action", "action": "pick up", "args": {}}
     if command.startswith("pick up "):
-        return {"type": "start_action", "action": "pick up", "args": {"item": canonical_object_name(command.removeprefix("pick up ").strip())}}
+        suffix = command.removeprefix("pick up ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_scene_args(snapshot, player_name, suffix)
+            return {"type": "start_action", "action": "pick up", "args": args} if args else None
+        return {"type": "start_action", "action": "pick up", "args": {"item": canonical_object_name(suffix)}}
     if command.startswith("pickup "):
-        return {"type": "start_action", "action": "pick up", "args": {"item": canonical_object_name(command.removeprefix("pickup ").strip())}}
+        suffix = command.removeprefix("pickup ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_scene_args(snapshot, player_name, suffix)
+            return {"type": "start_action", "action": "pick up", "args": args} if args else None
+        return {"type": "start_action", "action": "pick up", "args": {"item": canonical_object_name(suffix)}}
     if command == "drop":
         return {"type": "start_action", "action": "drop", "args": {}}
     if command.startswith("drop "):
-        return {"type": "start_action", "action": "drop", "args": {"item": canonical_object_name(command.removeprefix("drop ").strip())}}
+        suffix = command.removeprefix("drop ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_carried_args(snapshot, player_name, suffix, storage=False)
+            return {"type": "start_action", "action": "drop", "args": args} if args else None
+        return {"type": "start_action", "action": "drop", "args": {"item": canonical_object_name(suffix)}}
     if command == "pack":
         return {"type": "start_action", "action": "pack", "args": {}}
     if command.startswith("pack "):
-        return {"type": "start_action", "action": "pack", "args": {"item": canonical_object_name(command.removeprefix("pack ").strip())}}
+        suffix = command.removeprefix("pack ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_carried_args(snapshot, player_name, suffix, storage=False)
+            return {"type": "start_action", "action": "pack", "args": args} if args else None
+        return {"type": "start_action", "action": "pack", "args": {"item": canonical_object_name(suffix)}}
     if command == "unpack":
         return {"type": "start_action", "action": "unpack", "args": {}}
     if command.startswith("unpack "):
-        return {"type": "start_action", "action": "unpack", "args": {"item": canonical_object_name(command.removeprefix("unpack ").strip())}}
+        suffix = command.removeprefix("unpack ").strip()
+        if parse_content_index_suffix(suffix) is not None:
+            args = indexed_carried_content_args(snapshot, player_name, suffix)
+            return {"type": "start_action", "action": "unpack", "args": args} if args else None
+        return {"type": "start_action", "action": "unpack", "args": {"item": canonical_object_name(suffix)}}
     if command == "store":
         return {"type": "start_action", "action": "store", "args": {}}
     if command.startswith("store "):
-        return {"type": "start_action", "action": "store", "args": {"item": canonical_object_name(command.removeprefix("store ").strip())}}
+        suffix = command.removeprefix("store ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_carried_args(snapshot, player_name, suffix, storage=False)
+            return {"type": "start_action", "action": "store", "args": args} if args else None
+        return {"type": "start_action", "action": "store", "args": {"item": canonical_object_name(suffix)}}
     if command == "retrieve":
         return {"type": "start_action", "action": "retrieve", "args": {}}
     if command.startswith("retrieve "):
-        return {"type": "start_action", "action": "retrieve", "args": {"item": canonical_object_name(command.removeprefix("retrieve ").strip())}}
-    if command.startswith("forage "):
-        return {"type": "start_action", "action": "forage", "args": {"item": canonical_object_name(command.removeprefix("forage ").strip())}}
+        suffix = command.removeprefix("retrieve ").strip()
+        if parse_content_index_suffix(suffix) is not None:
+            args = indexed_placed_content_args(snapshot, player_name, suffix)
+            return {"type": "start_action", "action": "retrieve", "args": args} if args else None
+        return {"type": "start_action", "action": "retrieve", "args": {"item": canonical_object_name(suffix)}}
+    if command == "place basket":
+        return {"type": "start_action", "action": "place basket", "args": {}}
+    if command.startswith("place basket "):
+        suffix = command.removeprefix("place basket ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_carried_args(snapshot, player_name, suffix, item="basket", storage=True)
+            return {"type": "start_action", "action": "place basket", "args": args} if args else None
+    if command == "add rope to basket":
+        return {"type": "start_action", "action": "add rope to basket", "args": {}}
+    if command.startswith("add rope to basket "):
+        suffix = command.removeprefix("add rope to basket ").strip()
+        if parse_display_index_suffix(suffix) is not None:
+            args = indexed_carried_args(snapshot, player_name, suffix, item="basket", storage=True)
+            return {"type": "start_action", "action": "add rope to basket", "args": args} if args else None
+    if command == "light tinder with hand drill":
+        return {"type": "start_action", "action": "light tinder with hand drill", "args": {}}
+    if command.startswith("light tinder with hand drill "):
+        item = canonical_object_name(command.removeprefix("light tinder with hand drill ").strip())
+        return {
+            "type": "start_action",
+            "action": "light tinder with hand drill",
+            "args": {"item": item},
+        }
+    if command == "light tinder with bow drill":
+        return {"type": "start_action", "action": "light tinder with bow drill", "args": {}}
+    if command.startswith("light tinder with bow drill "):
+        item = canonical_object_name(command.removeprefix("light tinder with bow drill ").strip())
+        return {
+            "type": "start_action",
+            "action": "light tinder with bow drill",
+            "args": {"item": item},
+        }
+    if command == "light tinder from fire":
+        return {"type": "start_action", "action": "light tinder from fire", "args": {}}
+    if command.startswith("light tinder from fire "):
+        item = canonical_object_name(command.removeprefix("light tinder from fire ").strip())
+        return {
+            "type": "start_action",
+            "action": "light tinder from fire",
+            "args": {"item": item},
+        }
+    if command == "light tinder with mirror":
+        return {"type": "start_action", "action": "light tinder with mirror", "args": {}}
+    if command.startswith("light tinder with mirror "):
+        item = canonical_object_name(command.removeprefix("light tinder with mirror ").strip())
+        return {
+            "type": "start_action",
+            "action": "light tinder with mirror",
+            "args": {"item": item},
+        }
     if command.startswith("gather "):
         return {"type": "start_action", "action": "gather", "args": {"item": canonical_object_name(command.removeprefix("gather ").strip())}}
     if command in available_actions_for_snapshot(snapshot, player_name) or command in ACTION_DURATIONS:
@@ -1836,22 +2602,44 @@ def format_inventory_panel(snapshot: dict[str, Any], player_name: str, lang: str
         capacity = int(carrying.get("capacity", 1))
         burden = max(0, min(100, int(carrying.get("burden", effective * 100 // max(1, capacity)))))
         relief = int(carrying.get("relief", 0))
+        loose_slots = carrying.get("loose_slots")
+        loose_slot_capacity = carrying.get("loose_slot_capacity")
+        back_slots = carrying.get("back_slots")
+        back_slot_capacity = carrying.get("back_slot_capacity")
         if lang == "zh":
-            lines.append(f"  负重 {effective}/{capacity} {burden:3d} {_stat_bar(burden)}；减重 {relief}")
+            line = f"  负重 {effective}/{capacity} {burden:3d} {_stat_bar(burden)}；减重 {relief}"
+            if loose_slots is not None and loose_slot_capacity is not None:
+                line += f"；手持格 {int(loose_slots)}/{int(loose_slot_capacity)}"
+            if back_slots is not None and back_slot_capacity is not None:
+                line += f"；背部 {int(back_slots)}/{int(back_slot_capacity)}"
+            lines.append(line)
         else:
-            lines.append(f"  load {effective}/{capacity} {burden:3d} {_stat_bar(burden)}; relief {relief}")
+            line = f"  load {effective}/{capacity} {burden:3d} {_stat_bar(burden)}; relief {relief}"
+            if loose_slots is not None and loose_slot_capacity is not None:
+                line += f"; hands {int(loose_slots)}/{int(loose_slot_capacity)}"
+            if back_slots is not None and back_slot_capacity is not None:
+                line += f"; back {int(back_slots)}/{int(back_slot_capacity)}"
+            lines.append(line)
     carried = list(player.get("carried", []))
     if not carried:
         lines.append(f"  {ui_text('empty_inventory', lang)}")
         return "\n".join(lines)
-    for stack in reversed(carried):
+    worn_index = worn_backpack_index(carried)
+    for display, index, stack in carried_display_entries(player):
         item = str(stack["item"])
-        lines.append(f"  {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang, carried=True)}")
+        carry_details = carried_slot_and_load_description(stack, lang, worn_on_back=index == worn_index)
+        lines.append(
+            f"  [{display}] {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang, carried=True)}; {carry_details}"
+            if lang == "en"
+            else f"  [{display}] {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang, carried=True)}；{carry_details}"
+        )
         data = stack.get("data") or {}
         if isinstance(data, dict):
-            for content in reversed(storage_contents(data)):
+            for content_display, _content_index, content in storage_content_display_entries(data):
                 content_item = str(content["item"])
-                lines.append(f"    {content['qty']} {object_name(content_item, lang)} — {item_description(content, lang, carried=True)}")
+                lines.append(
+                    f"    [{display}.{content_display}] {content['qty']} {object_name(content_item, lang)} — {item_description(content, lang, carried=True)}"
+                )
     return "\n".join(lines)
 
 
@@ -1889,6 +2677,137 @@ def raft_lines(snapshot: dict[str, Any], current_location: str, lang: str = "en"
         remaining = int(raft.get("event_remaining_minutes", 0))
         signal = int(raft.get("signal_progress", 0))
         lines.append(f"  {ui_text('passing_ship', lang)}: signal {signal}/100, {remaining}m left")
+    return lines
+
+
+def raft_frame_in_snapshot(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    for location in snapshot.get("locations", {}).values():
+        for obj in location.get("placed", []):
+            if obj.get("kind") == "raft frame":
+                return obj
+    return None
+
+
+def name_list(names: list[str], lang: str = "en") -> str:
+    if lang == "zh":
+        return "、".join(names)
+    return ", ".join(names)
+
+
+def sleep_lines(snapshot: dict[str, Any], player_name: str, lang: str = "en") -> list[str]:
+    sleep = snapshot.get("sleep") or {}
+    resting = [str(name) for name in sleep.get("resting", [])]
+    waiting_for = [str(name) for name in sleep.get("waiting_for", [])]
+    player = snapshot.get("players", {}).get(player_name, {})
+    action = player.get("current_action")
+    player_resting = isinstance(action, dict) and action.get("name") == "rest"
+    if snapshot.get("paused") and (resting or player_resting):
+        return [
+            "  休息：世界已暂停；恢复后才会快进"
+            if lang == "zh"
+            else "  Rest: world is paused; resume to allow time skip"
+        ]
+    if sleep.get("all_resting"):
+        return [
+            "  休息：所有玩家都在休息，时间会快进"
+            if lang == "zh"
+            else "  Rest: everyone is resting; time skips ahead"
+        ]
+    if player_resting and waiting_for:
+        names = name_list(waiting_for, lang)
+        if lang == "zh":
+            return [f"  休息：等待 {names} 休息；时间保持正常速度"]
+        return [f"  Rest: waiting for {names}; time stays normal"]
+    other_resting = [name for name in resting if name != player_name]
+    if other_resting:
+        names = name_list(other_resting, lang)
+        if lang == "zh":
+            return [f"  休息：{names} 正在休息；你仍在活动时，时间保持正常速度"]
+        return [f"  Rest: {names} resting; time stays normal while you are active"]
+    return []
+
+
+def blocker_text(blocker: dict[str, Any], lang: str = "en") -> str:
+    kind = str(blocker.get("kind", ""))
+    if kind == "item":
+        qty = int(blocker.get("qty", 1))
+        return f"{qty} {object_name(str(blocker.get('item', 'item')), lang)}"
+    if kind == "tool":
+        qty = int(blocker.get("qty", 1))
+        item = object_name(str(blocker.get("item", "tool")), lang)
+        return f"{qty} {item}" if qty > 1 else item
+    if kind == "location":
+        location = object_name(str(blocker.get("name", "location")), lang)
+        return f"在{location}" if lang == "zh" else f"be at {location}"
+    if kind == "fire":
+        return "燃着的火" if lang == "zh" else "active fire"
+    if kind == "light":
+        return "可用光线" if lang == "zh" else "usable light"
+    if kind in {"object", "resource", "complete"}:
+        return object_name(str(blocker.get("name", "object")), lang)
+    if kind == "busy":
+        action = localized_action_name(str(blocker.get("action", "action")), lang)
+        return f"等待{action}完成" if lang == "zh" else f"{action} to finish"
+    if kind == "load":
+        return "减轻负重" if lang == "zh" else "lighter load"
+    return object_name(str(blocker.get("name", kind or "requirement")), lang)
+
+
+def blocked_action_lines(snapshot: dict[str, Any], lang: str = "en") -> list[str]:
+    lines = []
+    for hint in snapshot.get("blocked_actions", []):
+        action = localized_action_name(str(hint.get("action", "")), lang)
+        missing = [
+            blocker_text(blocker, lang)
+            for blocker in hint.get("missing", [])
+            if isinstance(blocker, dict)
+        ]
+        if not action or not missing:
+            continue
+        if lang == "zh":
+            lines.append(f"  暂不可用：{action}需要 {', '.join(missing)}")
+        else:
+            lines.append(f"  Blocked: {action} needs {', '.join(missing)}")
+    return lines
+
+
+def objective_lines(snapshot: dict[str, Any], player_name: str, lang: str = "en") -> list[str]:
+    if snapshot.get("outcome"):
+        return []
+    raft = snapshot.get("raft") or {}
+    distance = int(raft.get("distance", 0))
+    rescue_distance = int(raft.get("rescue_distance", RAFT_RESCUE_DISTANCE))
+    progress = max(0, min(100, distance * 100 // max(1, rescue_distance)))
+    frame = raft_frame_in_snapshot(snapshot)
+    build_line = None
+    if frame:
+        data = frame.get("data", {})
+        stage = int(data.get("stage", 0))
+        stages = int(data.get("stages", len(RAFT_BUILD_STAGES)))
+        build_progress = max(0, min(100, stage * 100 // max(1, stages)))
+        build_line = (
+            f"  {ui_text('raft_build', lang)}：阶段 {stage}/{stages} {build_progress:3d} {_stat_bar(build_progress)}"
+            if lang == "zh"
+            else f"  {ui_text('raft_build', lang)}: stage {stage}/{stages} {build_progress:3d} {_stat_bar(build_progress)}"
+        )
+    if lang == "zh":
+        lines = [
+            f"  {ui_text('escape_path', lang)}：建造木筏并航行至获救，或向过往船只示意 {distance}/{rescue_distance} {progress:3d} {_stat_bar(progress)}",
+            f"  {ui_text('death_path', lang)}：生命降到 0 会失败；口渴、饥饿、感染和疾病都会消耗生命",
+        ]
+        if build_line:
+            lines.insert(1, build_line)
+        lines.extend(sleep_lines(snapshot, player_name, lang))
+        lines.extend(blocked_action_lines(snapshot, lang))
+        return lines
+    lines = [
+        f"  {ui_text('escape_path', lang)}: build the raft, sail to rescue, or signal passing ships {distance}/{rescue_distance} {progress:3d} {_stat_bar(progress)}",
+        f"  {ui_text('death_path', lang)}: life at 0 ends the run; thirst, hunger, infection, and disease can drain it",
+    ]
+    if build_line:
+        lines.insert(1, build_line)
+    lines.extend(sleep_lines(snapshot, player_name, lang))
+    lines.extend(blocked_action_lines(snapshot, lang))
     return lines
 
 
@@ -1932,15 +2851,27 @@ def format_world_panel(snapshot: dict[str, Any], player_name: str, lang: str = "
     for card in current_loc.get("location_cards", []):
         card = str(card)
         scene_lines.append(f"  {object_name(card, lang)} — {location_card_description(card, lang)}")
-    for obj in current_loc["placed"]:
+    scene_indexes = {(kind, index): display for display, kind, index, _entry in scene_display_entries(current_loc)}
+    storage_indexes = {index: display for display, index, _obj in placed_storage_display_entries(current_loc)}
+    for index, obj in enumerate(current_loc["placed"]):
         kind = str(obj["kind"])
         name = object_name(kind, lang)
         if kind == "fire":
             name = f"{name}(fuel {obj['fuel']})"
-        scene_lines.append(f"  {name} — {placed_description(obj, lang)}")
-    for stack in reversed(current_loc["ground"]):
+        scene_lines.append(f"  [{scene_indexes[('placed', index)]}] {name} — {placed_description(obj, lang)}")
+        data = obj.get("data") or {}
+        storage_display = storage_indexes.get(index)
+        if storage_display is not None and isinstance(data, dict):
+            for content_display, _content_index, content in storage_content_display_entries(data):
+                content_item = str(content["item"])
+                scene_lines.append(
+                    f"    [{storage_display}.{content_display}] {content['qty']} {object_name(content_item, lang)} — {item_description(content, lang, carried=True)}"
+                )
+    ground = list(current_loc["ground"])
+    for index in range(len(ground) - 1, -1, -1):
+        stack = ground[index]
         item = str(stack["item"])
-        scene_lines.append(f"  {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang)}")
+        scene_lines.append(f"  [{scene_indexes[('ground', index)]}] {stack['qty']} {object_name(item, lang)} — {item_description(stack, lang)}")
     for name, location in sorted(snapshot["locations"].items()):
         if name != current and location.get("discovered", True):
             path = f"通往 {object_name(name, lang)} 的路" if lang == "zh" else f"path to {name}"
@@ -1949,11 +2880,27 @@ def format_world_panel(snapshot: dict[str, Any], player_name: str, lang: str = "
     scene_lines.extend(raft_lines(snapshot, current, lang))
     if len(scene_lines) == 1:
         scene_lines.append(f"  {ui_text('none', lang)}")
-    light = str(snapshot.get("lights", {}).get(current, snapshot.get("light", "daylight")))
+    weather = str(snapshot.get("weather", "clear"))
+    canonical_weather = canonical_weather_name(weather)
+    weather_def = WEATHER_DEFS.get(canonical_weather, WEATHER_DEFS["clear"])
+    rain_counter = int(snapshot.get("rain_counter", RAIN_COUNTER_START))
+    rain_value = int(snapshot.get("rain_value", weather_def["rain_value"]))
+    sun_strength = int(snapshot.get("sun_strength", weather_def["sun_strength"]))
+    season = season_name(str(snapshot.get("season", "dry")), lang)
+    tide = tide_name(str(snapshot.get("tide", "low")), lang)
+    light = light_name(str(snapshot.get("lights", {}).get(current, snapshot.get("light", "daylight"))), lang)
+    goals = objective_lines(snapshot, player_name, lang)
     lines = [
         ui_text("global", lang),
         f"  {clock}",
-        f"  {ui_text('weather', lang)}: {snapshot['weather']} {ui_text('light', lang)}: {light} {ui_text('paused', lang)}: {snapshot['paused']}",
+        (
+            f"  {ui_text('weather', lang)}: {weather_name(weather, lang)} "
+            f"{ui_text('light', lang)}: {light} {ui_text('paused', lang)}: {snapshot['paused']} "
+            f"{ui_text('season', lang)}: {season} {ui_text('rain_counter', lang)}: {rain_counter}/{RAIN_COUNTER_MAX} "
+            f"{ui_text('rain_value', lang)}: {rain_value}/5 "
+            f"{ui_text('sun_strength', lang)}: {sun_strength}/6 {ui_text('tide', lang)}: {tide}"
+        ),
+        *goals,
         "",
         *scene_lines,
     ]
