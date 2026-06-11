@@ -43,6 +43,9 @@ DEFAULT_CONDITIONS = {
     "derealization": 0,
     "isolation": 0,
     "food_poisoning": 0,
+    "parasites": 0,
+    "malaria": 0,
+    "bacterial_infection": 0,
     "alcohol": 0,
     "sodium_imbalance": 0,
     "quinine": 0,
@@ -101,6 +104,9 @@ PLAYER_STAT_GROUPS = {
         "heat_balance",
         "cold_balance",
         "blood_pressure_stability",
+        "parasite_control",
+        "malaria_resistance",
+        "infection_control",
         "fever_control",
         "stomach_stability",
         "digestion",
@@ -189,6 +195,7 @@ DEFAULT_SKILLS = {
     "cooking": 0,
     "metalworking": 0,
     "fishing": 0,
+    "spear_fishing": 0,
     "swimming": 0,
     "climbing": 0,
     "trapping": 0,
@@ -379,6 +386,8 @@ class World:
     minutes_per_tick: int = 3
     weather: str = "clear"
     season: str = "dry"
+    rain_counter: int = 400
+    weather_remaining_minutes: int = 360
     paused: bool = False
     outcome: str | None = None
     outcome_player: str | None = None
@@ -404,6 +413,8 @@ class World:
             "minutes_per_tick": self.minutes_per_tick,
             "weather": self.weather,
             "season": self.season,
+            "rain_counter": self.rain_counter,
+            "weather_remaining_minutes": self.weather_remaining_minutes,
             "outcome": self.outcome,
             "outcome_player": self.outcome_player,
             "outcome_reason": self.outcome_reason,
@@ -429,6 +440,8 @@ class World:
         world.minutes_per_tick = int(data.get("minutes_per_tick", 3))
         world.weather = data.get("weather", "clear")
         world.season = data.get("season", "dry")
+        world.rain_counter = int(data.get("rain_counter", 400))
+        world.weather_remaining_minutes = int(data.get("weather_remaining_minutes", 360))
         world.outcome = data.get("outcome")
         world.outcome_player = data.get("outcome_player")
         world.outcome_reason = data.get("outcome_reason")
