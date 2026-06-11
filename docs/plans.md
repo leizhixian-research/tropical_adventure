@@ -10,7 +10,7 @@ The next work should make the UI and gameplay feel like **interacting with objec
 - Scene/world panel = things at my current location.
 - Other players = scene objects at the location, just like a fire, coconut, path, or ground item.
 - Inventory panel = what I can use/carry, sorted by most recently used or acquired item.
-- Slash commands stay direct: `/inspect Bob`, `/pick up coconut`, `/move rocks`, `/forage coconut`.
+- Slash commands stay direct and concrete: `/pick up coconut 1`, `/move rocks`, `/harvest coconuts`, `/check fishing trap`.
 
 Keep changes small and testable. Avoid adding a big generic object-interaction framework until 2-3 concrete interactions prove what abstraction is needed.
 
@@ -103,60 +103,26 @@ Do **not** add full social mechanics yet. The first version only needs to prove 
 - Tests cover the behavior.
 - Manual two-client smoke test feels right.
 
-### 2. Add object-specific `/inspect <target>` as a client-side bridge
-
-**Goal:** Make scene objects feel interactable without adding server complexity yet.
-
-**Files:**
-
-- Modify: `tropical_adventure/client.py`
-  - `CLIENT_COMMANDS`
-  - `command_choices()`
-  - `command_to_message()` if needed
-  - `SurvivalApp.handle_message()` or input handling if local-only feedback is added
-- Test: `tests/test_client.py`
-
-**First behavior:**
-
-- `/inspect` keeps current behavior: request latest world snapshot.
-- `/inspect Bob` can be local-only at first and add an event like `You inspect Bob: another survivor is here.`
-- `/inspect fire` can describe visible fire state.
-- `/inspect coconut palms` can describe visible resource state.
-
-Keep server support for later, only when inspection needs hidden/private state.
-
-**Definition of done:**
-
-- Command menu includes useful inspect targets from visible scene data.
-- `/inspect` still works as before.
-- `/inspect <visible target>` gives understandable local feedback.
-- Unknown/invisible targets produce a clear local error.
-
-### 3. Improve command choices from scene objects
+### 2. Improve command choices from scene objects
 
 **Goal:** The slash menu should suggest commands based on objects currently visible in the scene.
 
 Current `command_choices()` already suggests:
 
 - `/move <location>` from discovered locations
-- `/pick up <item>` from ground stacks
-- `/drop <item>` from carried stacks
+- `/pick up <item> <scene-index>` from indexed scene objects and ground stacks
+- `/drop <item> <inventory-index>` from carried stacks
 - `/pack <item>` and `/unpack <item>` from carried containers
 - `/store <item>` and `/retrieve <item>` from placed storage
-- `/forage <item>` and `/gather <item>` from location resources
+- `/gather <item>` from visible loose resources; `/forage tide pool` stays as a concrete tide-pool action
 
-Next additions:
-
-- `/inspect Bob` for other players in the same location.
-- `/inspect fire`, `/inspect shelter`, `/inspect raincatcher` for placed objects.
-- `/inspect coconut palms`, `/inspect sea`, etc. for features.
-- Later, maybe `/give Bob coconut` only after inventory/hand semantics exist.
+Next additions should be concrete verbs from visible scene data, such as `/pick up basket 2`, `/add sticks to fire`, `/repair shelter`, or `/give Bob coconut` once inventory/hand semantics exist.
 
 Keep suggestions direct. Do not add `/action ...`.
 
 ### Completed: Simplify inventory panel to recent-used carried items
 
-**Goal:** The right panel should show immediately relevant items first without implying hands/equipment mechanics that do not exist yet.
+**Goal:** The right panel should show immediately relevant items first without implying a full equipment system.
 
 Current state:
 
@@ -165,11 +131,12 @@ Current state:
 - `add_items()` moves acquired/merged stacks to the end of `Player.carried`.
 - Vessel/tool/container use moves surviving touched stacks to the end of `Player.carried`.
 - Containers are now playable inside the flat carried model: storage stacks carry nested `contents`, slot limits, stored-weight capacity, and carried-load relief.
-- There is still no distinction between hands and equipment.
+- The flat carried list now has a 4-slot top-level hand/arm limit plus one automatic back slot for a backpack; baskets use hand slots and can be placed, extra backpacks stay off-hand, and container contents do not create nested containers.
+- There is still no separate equipped-item model.
 
 Recommended incremental path:
 
-1. Keep the flat list until a gameplay rule needs distinct hands or equipment.
+1. Keep the flat list until a gameplay rule needs distinct active hands or equipment.
 2. When a new direct item interaction mutates but does not consume a carried stack, move that stack to most recent.
 3. Add explicit model fields only if needed by mechanics:
    - `hands`: active held items with different action costs or blocking behavior
@@ -193,7 +160,7 @@ Safe public information for now:
 
 - name
 - online/offline presence, but only if the player is visible in the same location
-- current action, e.g. `Bob — survivor here, foraging`
+- current action, e.g. `Bob — survivor here, gathering`
 - obvious visible condition later, e.g. wounded/wet/resting
 
 Avoid showing full private needs/stats in the scene unless that becomes an explicit design choice.
@@ -265,5 +232,5 @@ uv run python -m tropical_adventure.client --host 127.0.0.1 --port 8765 --name B
 - Do not create a large generic plugin/object-interaction framework.
 - Do not put other players back into the left panel.
 - Do not expose full private stats for other players by default.
-- Do not implement trade/combat/help before the simpler scene-object display and inspect flow feel good.
+- Do not implement trade/combat/help before the simpler scene-object display and direct command flow feel good.
 - Do not replace the server-authoritative validation model with client-side rules.
